@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
+	"strings"
 )
 
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -31,7 +31,8 @@ func postHandler(response http.ResponseWriter, request *http.Request) {
 
 	body, _ := io.ReadAll(request.Body)
 
-	if string(body) == "" {
+	if strings.TrimSpace(string(body)) == "" {
+
 		http.Error(
 			response,
 			"URL cannot be empty",
@@ -48,7 +49,7 @@ func getHandler(response http.ResponseWriter, request *http.Request) {
 	id := request.URL.Path[1:]
 	orig_url := storage[id]
 
-	fmt.Fprintf(response, string(orig_url))
+	response.Write([]byte(orig_url))
 }
 
 func main() {

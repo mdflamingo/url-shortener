@@ -34,7 +34,7 @@ func TestPostHandler(t *testing.T) {
 			name:           "positive test with valid data",
 			contentType:    "text/plain",
 			body:           "https://example.com",
-			wantStatusCode: http.StatusOK,
+			wantStatusCode: http.StatusCreated,
 			wantBody:       "",
 		},
 		{
@@ -78,13 +78,15 @@ func TestPostHandler(t *testing.T) {
 
 			assert.Equal(t, tt.wantStatusCode, res.StatusCode)
 
-			if tt.wantStatusCode == http.StatusOK {
+			if tt.wantStatusCode == http.StatusCreated {
 				shortURL := string(resBody)
-				assert.Len(t, shortURL, 6)
-				for _, char := range shortURL {
+				parts := strings.Split(shortURL, "/")
+				shortID := parts[len(parts)-1]
+				assert.Len(t, shortID, 6)
+				for _, char := range shortID {
 					assert.True(t, strings.Contains(letters, string(char)))
 				}
-				assert.Equal(t, tt.body, storage[shortURL])
+				assert.Equal(t, tt.body, storage[shortID])
 			} else {
 				assert.Equal(t, tt.wantBody, string(resBody))
 			}
@@ -107,8 +109,8 @@ func TestGetHandler(t *testing.T) {
 		{
 			name:           "positive test - existing URL",
 			path:           "/" + testShortURL,
-			wantStatusCode: http.StatusOK,
-			wantBody:       testOriginalURL,
+			wantStatusCode: http.StatusTemporaryRedirect,
+			wantBody:       "",
 		},
 		{
 			name:           "non-existing URL",

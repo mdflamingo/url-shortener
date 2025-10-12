@@ -1,12 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"strings"
-
 	"github.com/go-chi/chi/v5"
 )
 
@@ -44,7 +43,8 @@ func postHandler(response http.ResponseWriter, request *http.Request) {
 
 	short_url := generateShortUrl(6)
 	storage[short_url] = string(body)
-	response.Write([]byte(short_url))
+	fullShortURL := baseShortUrl + "/" + short_url
+    response.Write([]byte(fullShortURL))
 }
 
 func getHandler(response http.ResponseWriter, request *http.Request) {
@@ -52,17 +52,26 @@ func getHandler(response http.ResponseWriter, request *http.Request) {
     orig_url, exists := storage[id]
 
     if exists {
-        response.Write([]byte(orig_url))
+		http.Redirect(response, request, orig_url, http.StatusTemporaryRedirect)
     } else {
         http.Error(response, "URL not found", http.StatusNotFound)
     }
 }
 
 func main() {
+	parseFlags()
+	if err := run(); err != nil {
+        panic(err)
+    }
+}
+
+func run() error {
+    fmt.Println("Running server on", flagRunAddr)
+	fmt.Printf("Base short URL: %s\n", baseShortUrl)
+
 	storage = make(map[string]string)
 	r := chi.NewRouter()
 	r.Get("/{id}", getHandler)
 	r.Post("/", postHandler)
-
-	log.Fatal(http.ListenAndServe(":8080", r))
+    return http.ListenAndServe(flagRunAddr, r)
 }

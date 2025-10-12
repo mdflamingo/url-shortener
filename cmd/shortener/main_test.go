@@ -113,8 +113,8 @@ func TestGetHandler(t *testing.T) {
 		{
 			name:           "non-existing URL",
 			path:           "/nonexistent",
-			wantStatusCode: http.StatusOK,
-			wantBody:       "",
+			wantStatusCode: http.StatusNotFound,
+			wantBody:       "URL not found\n",
 		},
 	}
 

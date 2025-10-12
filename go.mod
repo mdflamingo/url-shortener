@@ -1,6 +1,6 @@
 module github.com/mdflamingo/url-shortener
 
-go 1.25
+go 1.20
 
 require github.com/stretchr/testify v1.11.1
 

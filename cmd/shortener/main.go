@@ -2,16 +2,15 @@ package main
 
 import (
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"log"
 )
 
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
 var storage map[string]string
 
 func generateShortUrl(length int) string {
@@ -50,9 +49,13 @@ func postHandler(response http.ResponseWriter, request *http.Request) {
 
 func getHandler(response http.ResponseWriter, request *http.Request) {
 	id := chi.URLParam(request, "id")
-	orig_url := storage[id]
+    orig_url, exists := storage[id]
 
-	response.Write([]byte(orig_url))
+    if exists {
+        response.Write([]byte(orig_url))
+    } else {
+        http.Error(response, "URL not found", http.StatusNotFound)
+    }
 }
 
 func main() {

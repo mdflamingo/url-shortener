@@ -12,7 +12,7 @@ import (
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 var storage map[string]string
 
-func generateShortUrl(length int) string {
+func generateShortURL(length int) string {
 	short := make([]byte, length)
 	for i := range short {
 		short[i] = letters[rand.Intn(len(letters))]
@@ -41,18 +41,20 @@ func postHandler(response http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	short_url := generateShortUrl(6)
-	storage[short_url] = string(body)
-	fullShortURL := baseShortUrl + "/" + short_url
+	shortURL := generateShortURL(6)
+	storage[shortURL] = string(body)
+	fullShortURL := baseShortURL + "/" + shortURL
+
+	response.WriteHeader(http.StatusCreated)
     response.Write([]byte(fullShortURL))
 }
 
 func getHandler(response http.ResponseWriter, request *http.Request) {
 	id := chi.URLParam(request, "id")
-    orig_url, exists := storage[id]
+    origURL, exists := storage[id]
 
     if exists {
-		http.Redirect(response, request, orig_url, http.StatusTemporaryRedirect)
+		http.Redirect(response, request, origURL, http.StatusTemporaryRedirect)
     } else {
         http.Error(response, "URL not found", http.StatusNotFound)
     }
@@ -67,7 +69,7 @@ func main() {
 
 func run() error {
     fmt.Println("Running server on", flagRunAddr)
-	fmt.Printf("Base short URL: %s\n", baseShortUrl)
+	fmt.Printf("Base short URL: %s\n", baseShortURL)
 
 	storage = make(map[string]string)
 	r := chi.NewRouter()

@@ -110,7 +110,7 @@ func TestGetHandler(t *testing.T) {
 			name:           "positive test - existing URL",
 			path:           "/" + testShortURL,
 			wantStatusCode: http.StatusTemporaryRedirect,
-			wantBody:       "",
+			wantBody:       "<a href=\"https://example.com\">Temporary Redirect</a>.\n\n",
 		},
 		{
 			name:           "non-existing URL",

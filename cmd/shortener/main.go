@@ -5,6 +5,9 @@ import (
 	"math/rand"
 	"net/http"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
+	"log"
 )
 
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -32,7 +35,6 @@ func postHandler(response http.ResponseWriter, request *http.Request) {
 	body, _ := io.ReadAll(request.Body)
 
 	if strings.TrimSpace(string(body)) == "" {
-
 		http.Error(
 			response,
 			"URL cannot be empty",
@@ -40,13 +42,14 @@ func postHandler(response http.ResponseWriter, request *http.Request) {
 		)
 		return
 	}
+
 	short_url := generateShortUrl(6)
 	storage[short_url] = string(body)
 	response.Write([]byte(short_url))
 }
 
 func getHandler(response http.ResponseWriter, request *http.Request) {
-	id := request.URL.Path[1:]
+	id := chi.URLParam(request, "id")
 	orig_url := storage[id]
 
 	response.Write([]byte(orig_url))
@@ -54,20 +57,9 @@ func getHandler(response http.ResponseWriter, request *http.Request) {
 
 func main() {
 	storage = make(map[string]string)
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(response http.ResponseWriter, request *http.Request) {
-		switch {
-		case request.URL.Path != "/" && request.Method == http.MethodGet:
-			getHandler(response, request)
-		case request.URL.Path == "/" && request.Method == http.MethodPost:
-			postHandler(response, request)
-		default:
-			http.NotFound(response, request)
-		}
-	})
+	r := chi.NewRouter()
+	r.Get("/{id}", getHandler)
+	r.Post("/", postHandler)
 
-	err := http.ListenAndServe(`:8080`, mux)
-	if err != nil {
-		panic(err)
-	}
+	log.Fatal(http.ListenAndServe(":8080", r))
 }

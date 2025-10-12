@@ -8,12 +8,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func setupRouter() http.Handler {
+	r := chi.NewRouter()
+	r.Get("/{id}", getHandler)
+	r.Post("/", postHandler)
+	return r
+}
+
 func TestPostHandler(t *testing.T) {
 	storage = make(map[string]string)
+
 	tests := []struct {
 		name           string
 		contentType    string
@@ -57,7 +66,9 @@ func TestPostHandler(t *testing.T) {
 			request.Header.Set("Content-Type", tt.contentType)
 
 			w := httptest.NewRecorder()
-			postHandler(w, request)
+
+			router := setupRouter()
+			router.ServeHTTP(w, request)
 
 			res := w.Result()
 			defer res.Body.Close()
@@ -105,12 +116,6 @@ func TestGetHandler(t *testing.T) {
 			wantStatusCode: http.StatusOK,
 			wantBody:       "",
 		},
-		{
-			name:           "URL with special characters in path",
-			path:           "/test/url",
-			wantStatusCode: http.StatusOK,
-			wantBody:       "",
-		},
 	}
 
 	for _, tt := range tests {
@@ -118,7 +123,8 @@ func TestGetHandler(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			w := httptest.NewRecorder()
 
-			getHandler(w, request)
+			router := setupRouter()
+			router.ServeHTTP(w, request)
 
 			res := w.Result()
 			defer res.Body.Close()
@@ -130,4 +136,22 @@ func TestGetHandler(t *testing.T) {
 			assert.Equal(t, tt.wantBody, string(resBody))
 		})
 	}
+}
+
+func TestGetHandler_SpecialCharacters(t *testing.T) {
+	storage = make(map[string]string)
+	request := httptest.NewRequest(http.MethodGet, "/test/url", nil)
+	w := httptest.NewRecorder()
+
+	router := setupRouter()
+	router.ServeHTTP(w, request)
+
+	res := w.Result()
+	defer res.Body.Close()
+
+	assert.Equal(t, http.StatusNotFound, res.StatusCode)
+
+	resBody, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+	assert.Equal(t, "404 page not found\n", string(resBody))
 }

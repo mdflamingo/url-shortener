@@ -25,7 +25,7 @@ func run(conf *config.Config) error {
 	storage := repository.NewStorage()
 	r := chi.NewRouter()
 
-	r.Get("/id", func(w http.ResponseWriter, req *http.Request) {
+	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
 		handler.GetHandler(w, req, storage)
 	})
 	r.Post("/", func(w http.ResponseWriter, req *http.Request) {

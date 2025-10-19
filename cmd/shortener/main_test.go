@@ -2,30 +2,34 @@ package main
 
 import (
 	"bytes"
-	"github.com/go-chi/chi/v5"
-	"github.com/mdflamingo/url-shortener/internal/handler"
-	"github.com/mdflamingo/url-shortener/internal/service"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/mdflamingo/url-shortener/internal/handler"
+	"github.com/mdflamingo/url-shortener/internal/repository"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func setupRouter(t *testing.T, baseURL string) http.Handler {
+const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func setupRouter(t *testing.T, baseURL string, storage *repository.URLStorage) http.Handler {
 	t.Helper()
 	r := chi.NewRouter()
-	r.Get("/{id}", handler.GetHandler)
+	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
+		handler.GetHandler(w, req, storage)
+	})
 	r.Post("/", func(w http.ResponseWriter, req *http.Request) {
-		handler.PostHandler(w, req, baseURL)
+		handler.PostHandler(w, req, baseURL, storage)
 	})
 	return r
 }
 func TestPostHandler(t *testing.T) {
-	handler.Storage = make(map[string]string)
-
+	storage := repository.NewStorage()
 	tests := []struct {
 		name           string
 		contentType    string
@@ -70,7 +74,7 @@ func TestPostHandler(t *testing.T) {
 
 			w := httptest.NewRecorder()
 
-			router := setupRouter(t, "http://localhost:8080")
+			router := setupRouter(t, "http://localhost:8080", storage)
 			router.ServeHTTP(w, request)
 
 			res := w.Result()
@@ -87,9 +91,11 @@ func TestPostHandler(t *testing.T) {
 				shortID := parts[len(parts)-1]
 				assert.Len(t, shortID, 6)
 				for _, char := range shortID {
-					assert.True(t, strings.Contains(service.Letters, string(char)))
+					assert.True(t, strings.Contains(letters, string(char)))
 				}
-				assert.Equal(t, tt.body, handler.Storage[shortID])
+				origURL, exists := storage.Get(shortID)
+				assert.True(t, exists)
+				assert.Equal(t, tt.body, origURL)
 			} else {
 				assert.Equal(t, tt.wantBody, string(resBody))
 			}
@@ -98,21 +104,23 @@ func TestPostHandler(t *testing.T) {
 }
 
 func TestGetHandler(t *testing.T) {
-	handler.Storage = make(map[string]string)
+	storage := repository.NewStorage()
 	testShortURL := "abc123"
 	testOriginalURL := "https://example.com"
-	handler.Storage[testShortURL] = testOriginalURL
+	storage.Save(testShortURL, testOriginalURL)
 
 	tests := []struct {
 		name           string
 		path           string
 		wantStatusCode int
+		wantLocation   string
 		wantBody       string
 	}{
 		{
 			name:           "positive test - existing URL",
 			path:           "/" + testShortURL,
 			wantStatusCode: http.StatusTemporaryRedirect,
+			wantLocation:   testOriginalURL,
 			wantBody:       "<a href=\"https://example.com\">Temporary Redirect</a>.\n\n",
 		},
 		{
@@ -128,7 +136,7 @@ func TestGetHandler(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			w := httptest.NewRecorder()
 
-			router := setupRouter(t, "http://localhost:8080")
+			router := setupRouter(t, "http://localhost:8080", storage)
 			router.ServeHTTP(w, request)
 
 			res := w.Result()
@@ -138,17 +146,24 @@ func TestGetHandler(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantStatusCode, res.StatusCode)
-			assert.Equal(t, tt.wantBody, string(resBody))
+
+			if tt.wantStatusCode == http.StatusTemporaryRedirect {
+				assert.Equal(t, tt.wantLocation, res.Header.Get("Location"))
+			}
+
+			if tt.wantStatusCode != http.StatusTemporaryRedirect {
+				assert.Equal(t, tt.wantBody, string(resBody))
+			}
 		})
 	}
 }
 
 func TestGetHandler_SpecialCharacters(t *testing.T) {
-	handler.Storage = make(map[string]string)
+	storage := repository.NewStorage()
 	request := httptest.NewRequest(http.MethodGet, "/test/url", nil)
 	w := httptest.NewRecorder()
 
-	router := setupRouter(t, "http://localhost:8080")
+	router := setupRouter(t, "http://localhost:8080", storage)
 	router.ServeHTTP(w, request)
 
 	res := w.Result()

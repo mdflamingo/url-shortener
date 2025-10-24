@@ -34,4 +34,3 @@ func run(conf *config.Config) error {
 
 	return http.ListenAndServe(conf.FlagRunAddr, r)
 }
-

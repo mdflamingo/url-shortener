@@ -47,17 +47,19 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 
 	for attempts := range maxAttempts {
 		shortURL = service.GenerateShortURL(6)
-		if _, ok := storage.Exists(shortURL); !ok {
+		err := storage.Save(shortURL, string(body))
+		if err == nil {
 			break
 		}
+
+		log.Printf("ID already exists, attempt %d: error=%s\n", attempts+1, err)
+
 		if attempts == maxAttempts-1 {
 			log.Printf("Error: failed to generate unique short URL after %d attempts", maxAttempts)
 			http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 	}
-
-	storage.Save(shortURL, string(body))
 
 	fullURL, err := url.JoinPath(baseURL, shortURL)
 	if err != nil {

@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"os"
 )
 
 type Config struct {
@@ -11,9 +12,20 @@ type Config struct {
 
 func ParseFlags() *Config {
 	cfg := &Config{}
-	flag.StringVar(&cfg.FlagRunAddr, "a", ":8080", "address and port to run server")
-	flag.StringVar(&cfg.BaseShortURL, "b", "http://localhost:8080", "base address before short url")
+	flagRunAddr := flag.String("a", ":8080", "address and port to run server")
+	baseURL := flag.String("b", "http://localhost:8080", "base address before short url")
 	flag.Parse()
+
+	if envRunAddr := os.Getenv("SERVER_ADDRESS"); envRunAddr != "" {
+		cfg.FlagRunAddr = envRunAddr
+	} else {
+		cfg.FlagRunAddr = *flagRunAddr
+	}
+	if envBaseURL := os.Getenv("BASE_URL"); envBaseURL != "" {
+		cfg.BaseShortURL = envBaseURL
+	} else {
+		cfg.BaseShortURL = *baseURL
+	}
 
 	return cfg
 }

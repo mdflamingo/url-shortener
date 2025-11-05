@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/mdflamingo/url-shortener/internal/logger"
+	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/mdflamingo/url-shortener/internal/service"
 	"go.uber.org/zap"
@@ -51,26 +55,14 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	var maxAttempts = 10
-	var shortURL string
+	shortURL, err := GenerateShortURL(string(body), response, storage)
 
-	for attempts := range maxAttempts {
-		shortURL = service.GenerateShortURL(6)
-		err := storage.Save(shortURL, string(body))
-		if err == nil {
-			break
-		}
-
-		logger.Log.Warn("ID collision detected",
-			zap.String("short_url", shortURL),
-			zap.Int("attempt", attempts+1),
+	if err != nil {
+		logger.Log.Error("Failed to generate short URL",
+			zap.String("original_url", string(body)),
 			zap.Error(err))
-
-		if attempts == maxAttempts-1 {
-			logger.Log.Error("failed to generate unique short URL after max attempts", zap.Int("max_attempts", maxAttempts))
-			http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
-		}
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
 	fullURL, err := url.JoinPath(baseURL, shortURL)
@@ -98,4 +90,88 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage *re
 			zap.String("short_id", id))
 		http.Error(response, "URL not found", http.StatusNotFound)
 	}
+}
+
+func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage *repository.URLStorage) {
+	if request.Method != http.MethodPost {
+		http.Error(response, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+	var origURL models.Request
+	var buf bytes.Buffer
+
+	_, err := buf.ReadFrom(request.Body)
+
+	if err != nil {
+		logger.Log.Error("failed to read request body", zap.Error(err))
+		http.Error(response, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err = json.Unmarshal(buf.Bytes(), &origURL); err != nil {
+		logger.Log.Error("Failed to unmarshal JSON",
+			zap.Error(err),
+			zap.String("request_body", buf.String()))
+		http.Error(response, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	shortURL, err := GenerateShortURL(origURL.URL, response, storage)
+
+	if err != nil {
+		logger.Log.Error("Failed to generate short URL",
+			zap.String("original_url", origURL.URL),
+			zap.Error(err))
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	fullURL, err := url.JoinPath(baseURL, shortURL)
+
+	if err != nil {
+		logger.Log.Error("failed to join URL path",
+			zap.String("base_url", baseURL),
+			zap.String("short_url", shortURL),
+			zap.Error(err))
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	resp := models.Response{
+		Result: fullURL,
+	}
+	respJSON, err := json.Marshal(resp)
+
+	if err != nil {
+		logger.Log.Error("Failed to marshal response to JSON", zap.Error(err), zap.Any("response_object", resp))
+		http.Error(response, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(http.StatusOK)
+	response.Write(respJSON)
+}
+
+func GenerateShortURL(origURL string, response http.ResponseWriter, storage *repository.URLStorage) (string, error) {
+	var maxAttempts = 10
+	var shortURL string
+
+	for attempts := range maxAttempts {
+		shortURL = service.GenerateShortURL(6)
+		err := storage.Save(shortURL, string(origURL))
+		if err == nil {
+			return shortURL, nil
+		}
+
+		logger.Log.Warn("ID collision detected",
+			zap.String("short_url", shortURL),
+			zap.Int("attempt", attempts+1),
+			zap.Error(err))
+
+		if attempts == maxAttempts-1 {
+			return "", fmt.Errorf("failed to generate unique short URL after %d attempts: %w", maxAttempts, err)
+		}
+	}
+	return "", fmt.Errorf("unknown error")
+
 }

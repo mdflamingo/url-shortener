@@ -39,6 +39,9 @@ func run(conf *config.Config) error {
 	r.Post("/", func(w http.ResponseWriter, req *http.Request) {
 		handler.PostHandler(w, req, conf.BaseShortURL, storage)
 	})
+	r.Post("/api/shorten", func(w http.ResponseWriter, req *http.Request) {
+		handler.JSONPostHandler(w, req, conf.BaseShortURL, storage)
+	})
 
 	return http.ListenAndServe(conf.FlagRunAddr, r)
 }

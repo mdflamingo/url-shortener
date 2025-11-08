@@ -300,147 +300,147 @@ func TestJSONPostHandler(t *testing.T) {
 }
 
 func TestGzipCompression(t *testing.T) {
-    storage := repository.NewStorage()
-    baseURL := "http://localhost:8080"
+	storage := repository.NewStorage()
+	baseURL := "http://localhost:8080"
 
-    handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        handler.JSONPostHandler(w, r, baseURL, storage)
-    })
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler.JSONPostHandler(w, r, baseURL, storage)
+	})
 
-    handlerWithMiddleware := gzipMiddleware(handler)
+	handlerWithMiddleware := gzipMiddleware(handler)
 
-    srv := httptest.NewServer(handlerWithMiddleware)
-    defer srv.Close()
+	srv := httptest.NewServer(handlerWithMiddleware)
+	defer srv.Close()
 
-    requestBody := `{"url": "https://example.com"}`
+	requestBody := `{"url": "https://example.com"}`
 
-    t.Run("sends_gzip_request", func(t *testing.T) {
-        buf := bytes.NewBuffer(nil)
-        zb := gzip.NewWriter(buf)
-        _, err := zb.Write([]byte(requestBody))
-        require.NoError(t, err)
-        err = zb.Close()
-        require.NoError(t, err)
+	t.Run("sends_gzip_request", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		zb := gzip.NewWriter(buf)
+		_, err := zb.Write([]byte(requestBody))
+		require.NoError(t, err)
+		err = zb.Close()
+		require.NoError(t, err)
 
-        r := httptest.NewRequest("POST", srv.URL+"/api/shorten", buf)
-        r.RequestURI = ""
-        r.Header.Set("Content-Encoding", "gzip")
-        r.Header.Set("Content-Type", "application/json")
-        r.Header.Set("Accept-Encoding", "")
+		r := httptest.NewRequest("POST", srv.URL+"/api/shorten", buf)
+		r.RequestURI = ""
+		r.Header.Set("Content-Encoding", "gzip")
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Accept-Encoding", "")
 
-        resp, err := http.DefaultClient.Do(r)
-        require.NoError(t, err)
-        require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp, err := http.DefaultClient.Do(r)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-        defer resp.Body.Close()
+		defer resp.Body.Close()
 
-        b, err := io.ReadAll(resp.Body)
-        require.NoError(t, err)
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
 
-        var response models.Response
-        err = json.Unmarshal(b, &response)
-        require.NoError(t, err)
+		var response models.Response
+		err = json.Unmarshal(b, &response)
+		require.NoError(t, err)
 
-        assert.Contains(t, response.Result, baseURL)
-        assert.NotEmpty(t, response.Result)
+		assert.Contains(t, response.Result, baseURL)
+		assert.NotEmpty(t, response.Result)
 
-        parts := strings.Split(response.Result, "/")
-        shortID := parts[len(parts)-1]
-        originalURL, exists := storage.Get(shortID)
-        assert.True(t, exists)
-        assert.Equal(t, "https://example.com", originalURL)
-    })
+		parts := strings.Split(response.Result, "/")
+		shortID := parts[len(parts)-1]
+		originalURL, exists := storage.Get(shortID)
+		assert.True(t, exists)
+		assert.Equal(t, "https://example.com", originalURL)
+	})
 
-    t.Run("accepts_gzip_response", func(t *testing.T) {
-        buf := bytes.NewBufferString(requestBody)
-        r := httptest.NewRequest("POST", srv.URL+"/api/shorten", buf)
-        r.RequestURI = ""
-        r.Header.Set("Content-Type", "application/json")
-        r.Header.Set("Accept-Encoding", "gzip")
+	t.Run("accepts_gzip_response", func(t *testing.T) {
+		buf := bytes.NewBufferString(requestBody)
+		r := httptest.NewRequest("POST", srv.URL+"/api/shorten", buf)
+		r.RequestURI = ""
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Accept-Encoding", "gzip")
 
-        resp, err := http.DefaultClient.Do(r)
-        require.NoError(t, err)
-        require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp, err := http.DefaultClient.Do(r)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-        defer resp.Body.Close()
+		defer resp.Body.Close()
 
-        assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"))
+		assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"))
 
-        zr, err := gzip.NewReader(resp.Body)
-        require.NoError(t, err)
-        defer zr.Close()
+		zr, err := gzip.NewReader(resp.Body)
+		require.NoError(t, err)
+		defer zr.Close()
 
-        b, err := io.ReadAll(zr)
-        require.NoError(t, err)
+		b, err := io.ReadAll(zr)
+		require.NoError(t, err)
 
-        var response models.Response
-        err = json.Unmarshal(b, &response)
-        require.NoError(t, err)
+		var response models.Response
+		err = json.Unmarshal(b, &response)
+		require.NoError(t, err)
 
-        assert.Contains(t, response.Result, baseURL)
-        assert.NotEmpty(t, response.Result)
-    })
+		assert.Contains(t, response.Result, baseURL)
+		assert.NotEmpty(t, response.Result)
+	})
 
-    t.Run("sends_and_accepts_gzip", func(t *testing.T) {
-        buf := bytes.NewBuffer(nil)
-        zb := gzip.NewWriter(buf)
-        _, err := zb.Write([]byte(requestBody))
-        require.NoError(t, err)
-        err = zb.Close()
-        require.NoError(t, err)
+	t.Run("sends_and_accepts_gzip", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		zb := gzip.NewWriter(buf)
+		_, err := zb.Write([]byte(requestBody))
+		require.NoError(t, err)
+		err = zb.Close()
+		require.NoError(t, err)
 
-        r := httptest.NewRequest("POST", srv.URL+"/api/shorten", buf)
-        r.RequestURI = ""
-        r.Header.Set("Content-Encoding", "gzip")
-        r.Header.Set("Content-Type", "application/json")
-        r.Header.Set("Accept-Encoding", "gzip")
+		r := httptest.NewRequest("POST", srv.URL+"/api/shorten", buf)
+		r.RequestURI = ""
+		r.Header.Set("Content-Encoding", "gzip")
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Accept-Encoding", "gzip")
 
-        resp, err := http.DefaultClient.Do(r)
-        require.NoError(t, err)
-        require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp, err := http.DefaultClient.Do(r)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-        defer resp.Body.Close()
+		defer resp.Body.Close()
 
-        assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"))
+		assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"))
 
-        zr, err := gzip.NewReader(resp.Body)
-        require.NoError(t, err)
-        defer zr.Close()
+		zr, err := gzip.NewReader(resp.Body)
+		require.NoError(t, err)
+		defer zr.Close()
 
-        b, err := io.ReadAll(zr)
-        require.NoError(t, err)
+		b, err := io.ReadAll(zr)
+		require.NoError(t, err)
 
-        var response models.Response
-        err = json.Unmarshal(b, &response)
-        require.NoError(t, err)
+		var response models.Response
+		err = json.Unmarshal(b, &response)
+		require.NoError(t, err)
 
-        assert.Contains(t, response.Result, baseURL)
-        assert.NotEmpty(t, response.Result)
-    })
+		assert.Contains(t, response.Result, baseURL)
+		assert.NotEmpty(t, response.Result)
+	})
 
-    t.Run("plain_request_plain_response", func(t *testing.T) {
-        buf := bytes.NewBufferString(requestBody)
-        r := httptest.NewRequest("POST", srv.URL+"/api/shorten", buf)
-        r.RequestURI = ""
-        r.Header.Set("Content-Type", "application/json")
-        r.Header.Set("Accept-Encoding", "")
+	t.Run("plain_request_plain_response", func(t *testing.T) {
+		buf := bytes.NewBufferString(requestBody)
+		r := httptest.NewRequest("POST", srv.URL+"/api/shorten", buf)
+		r.RequestURI = ""
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Accept-Encoding", "")
 
-        resp, err := http.DefaultClient.Do(r)
-        require.NoError(t, err)
-        require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp, err := http.DefaultClient.Do(r)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-        defer resp.Body.Close()
+		defer resp.Body.Close()
 
-        assert.Empty(t, resp.Header.Get("Content-Encoding"))
+		assert.Empty(t, resp.Header.Get("Content-Encoding"))
 
-        b, err := io.ReadAll(resp.Body)
-        require.NoError(t, err)
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
 
-        var response models.Response
-        err = json.Unmarshal(b, &response)
-        require.NoError(t, err)
+		var response models.Response
+		err = json.Unmarshal(b, &response)
+		require.NoError(t, err)
 
-        assert.Contains(t, response.Result, baseURL)
-        assert.NotEmpty(t, response.Result)
-    })
+		assert.Contains(t, response.Result, baseURL)
+		assert.NotEmpty(t, response.Result)
+	})
 }

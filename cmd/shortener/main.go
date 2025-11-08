@@ -32,6 +32,7 @@ func run(conf *config.Config) error {
 	r := chi.NewRouter()
 
 	r.Use(logger.RequestLogger)
+	r.Use(gzipMiddleware)
 
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
 		handler.GetHandler(w, req, storage)

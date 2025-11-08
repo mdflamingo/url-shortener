@@ -186,75 +186,75 @@ func TestJSONPostHandler(t *testing.T) {
 	baseURL := "http://localhost:8080"
 
 	tests := []struct {
-		name           string
-		method         string
-		body           string
-		contentType    string
-		expectedCode   int
-		expectedBody   string
-		checkResult    bool
+		name         string
+		method       string
+		body         string
+		contentType  string
+		expectedCode int
+		expectedBody string
+		checkResult  bool
 	}{
 		{
-			name:           "method_get_not_allowed",
-			method:         http.MethodGet,
-			contentType:    "application/json",
-			expectedCode:   http.StatusMethodNotAllowed,
-			expectedBody:   "",
+			name:         "method_get_not_allowed",
+			method:       http.MethodGet,
+			contentType:  "application/json",
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
 		},
 		{
-			name:           "method_put_not_allowed",
-			method:         http.MethodPut,
-			contentType:    "application/json",
-			expectedCode:   http.StatusMethodNotAllowed,
-			expectedBody:   "",
+			name:         "method_put_not_allowed",
+			method:       http.MethodPut,
+			contentType:  "application/json",
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
 		},
 		{
-			name:           "method_delete_not_allowed",
-			method:         http.MethodDelete,
-			contentType:    "application/json",
-			expectedCode:   http.StatusMethodNotAllowed,
-			expectedBody:   "",
+			name:         "method_delete_not_allowed",
+			method:       http.MethodDelete,
+			contentType:  "application/json",
+			expectedCode: http.StatusMethodNotAllowed,
+			expectedBody: "",
 		},
 		{
-			name:           "invalid_json",
-			method:         http.MethodPost,
-			body:           `{"url": "https://example.com"`,
-			contentType:    "application/json",
-			expectedCode:   http.StatusBadRequest,
-			expectedBody:   "",
+			name:         "invalid_json",
+			method:       http.MethodPost,
+			body:         `{"url": "https://example.com"`,
+			contentType:  "application/json",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "",
 		},
 		{
-			name:           "empty_url_field",
-			method:         http.MethodPost,
-			body:           `{"url": ""}`,
-			contentType:    "application/json",
-			expectedCode:   http.StatusBadRequest,
-			expectedBody:   "URL cannot be empty\n",
+			name:         "empty_url_field",
+			method:       http.MethodPost,
+			body:         `{"url": ""}`,
+			contentType:  "application/json",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "URL cannot be empty\n",
 		},
 		{
-			name:           "missing_url_field",
-			method:         http.MethodPost,
-			body:           `{"other_field": "value"}`,
-			contentType:    "application/json",
-			expectedCode:   http.StatusBadRequest,
-			expectedBody:   "",
+			name:         "missing_url_field",
+			method:       http.MethodPost,
+			body:         `{"other_field": "value"}`,
+			contentType:  "application/json",
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "",
 		},
 		{
-			name:           "valid_url_success",
-			method:         http.MethodPost,
-			body:           `{"url": "https://example.com"}`,
-			contentType:    "application/json",
-			expectedCode:   http.StatusOK,
-			expectedBody:   "",
-			checkResult:    true,
+			name:         "valid_url_success",
+			method:       http.MethodPost,
+			body:         `{"url": "https://example.com"}`,
+			contentType:  "application/json",
+			expectedCode: http.StatusOK,
+			expectedBody: "",
+			checkResult:  true,
 		},
 		{
-			name:           "wrong_content_type",
-			method:         http.MethodPost,
-			body:           `{"url": "https://example.com"}`,
-			contentType:    "text/plain",
+			name:         "wrong_content_type",
+			method:       http.MethodPost,
+			body:         `{"url": "https://example.com"}`,
+			contentType:  "text/plain",
 			expectedCode: http.StatusUnsupportedMediaType,
-			expectedBody:   "",
+			expectedBody: "",
 		},
 	}
 

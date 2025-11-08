@@ -97,6 +97,17 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		http.Error(response, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
+
+	if request.Header.Get("Content-Type") != "application/json" {
+		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
+		http.Error(
+			response,
+			"Invalid Content-Type",
+			http.StatusUnsupportedMediaType,
+		)
+		return
+	}
+
 	var origURL models.Request
 	var buf bytes.Buffer
 
@@ -115,6 +126,10 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		return
 	}
 
+	if origURL.URL == "" {
+		http.Error(response, "URL cannot be empty", http.StatusBadRequest)
+		return
+	}
 	shortURL, err := GenerateShortURL(origURL.URL, response, storage)
 
 	if err != nil {

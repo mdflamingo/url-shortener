@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mdflamingo/url-shortener/internal/handler"
+	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,6 +27,9 @@ func setupRouter(t *testing.T, baseURL string, storage *repository.URLStorage) h
 	})
 	r.Post("/", func(w http.ResponseWriter, req *http.Request) {
 		handler.PostHandler(w, req, baseURL, storage)
+	})
+	r.Post("/api/shorten", func(w http.ResponseWriter, req *http.Request) {
+		handler.JSONPostHandler(w, req, baseURL, storage)
 	})
 	return r
 }
@@ -174,4 +179,121 @@ func TestGetHandler_SpecialCharacters(t *testing.T) {
 	resBody, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 	assert.Equal(t, "404 page not found\n", string(resBody))
+}
+
+func TestJSONPostHandler(t *testing.T) {
+	storage := repository.NewStorage()
+	baseURL := "http://localhost:8080"
+
+	tests := []struct {
+		name           string
+		method         string
+		body           string
+		contentType    string
+		expectedCode   int
+		expectedBody   string
+		checkResult    bool
+	}{
+		{
+			name:           "method_get_not_allowed",
+			method:         http.MethodGet,
+			contentType:    "application/json",
+			expectedCode:   http.StatusMethodNotAllowed,
+			expectedBody:   "",
+		},
+		{
+			name:           "method_put_not_allowed",
+			method:         http.MethodPut,
+			contentType:    "application/json",
+			expectedCode:   http.StatusMethodNotAllowed,
+			expectedBody:   "",
+		},
+		{
+			name:           "method_delete_not_allowed",
+			method:         http.MethodDelete,
+			contentType:    "application/json",
+			expectedCode:   http.StatusMethodNotAllowed,
+			expectedBody:   "",
+		},
+		{
+			name:           "invalid_json",
+			method:         http.MethodPost,
+			body:           `{"url": "https://example.com"`,
+			contentType:    "application/json",
+			expectedCode:   http.StatusBadRequest,
+			expectedBody:   "",
+		},
+		{
+			name:           "empty_url_field",
+			method:         http.MethodPost,
+			body:           `{"url": ""}`,
+			contentType:    "application/json",
+			expectedCode:   http.StatusBadRequest,
+			expectedBody:   "URL cannot be empty\n",
+		},
+		{
+			name:           "missing_url_field",
+			method:         http.MethodPost,
+			body:           `{"other_field": "value"}`,
+			contentType:    "application/json",
+			expectedCode:   http.StatusBadRequest,
+			expectedBody:   "",
+		},
+		{
+			name:           "valid_url_success",
+			method:         http.MethodPost,
+			body:           `{"url": "https://example.com"}`,
+			contentType:    "application/json",
+			expectedCode:   http.StatusOK,
+			expectedBody:   "",
+			checkResult:    true,
+		},
+		{
+			name:           "wrong_content_type",
+			method:         http.MethodPost,
+			body:           `{"url": "https://example.com"}`,
+			contentType:    "text/plain",
+			expectedCode: http.StatusUnsupportedMediaType,
+			expectedBody:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := httptest.NewRequest(tt.method, "/api/shorten", bytes.NewBufferString(tt.body))
+			request.Header.Set("Content-Type", tt.contentType)
+
+			w := httptest.NewRecorder()
+
+			router := setupRouter(t, baseURL, storage)
+			router.ServeHTTP(w, request)
+
+			res := w.Result()
+			defer res.Body.Close()
+
+			resBody, err := io.ReadAll(res.Body)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.expectedCode, res.StatusCode)
+
+			if tt.expectedBody != "" {
+				assert.Equal(t, tt.expectedBody, string(resBody))
+			}
+
+			if tt.checkResult && tt.expectedCode == http.StatusOK {
+				var response models.Response
+				err = json.Unmarshal(resBody, &response)
+				require.NoError(t, err)
+
+				assert.Contains(t, response.Result, baseURL)
+				assert.NotEmpty(t, response.Result)
+
+				parts := strings.Split(response.Result, "/")
+				shortID := parts[len(parts)-1]
+				originalURL, exists := storage.Get(shortID)
+				assert.True(t, exists)
+				assert.Equal(t, "https://example.com", originalURL)
+			}
+		})
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ import (
 
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-func setupRouter(t *testing.T, baseURL string, storage *repository.URLStorage) http.Handler {
+func setupRouter(t *testing.T, baseURL string, storage *repository.FileStorage) http.Handler {
 	t.Helper()
 	r := chi.NewRouter()
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
@@ -34,8 +35,28 @@ func setupRouter(t *testing.T, baseURL string, storage *repository.URLStorage) h
 	})
 	return r
 }
+
+func createTestStorage(t *testing.T) *repository.FileStorage {
+	t.Helper()
+
+	// Создаем временный файл для тестов
+	tmpFile, err := os.CreateTemp("", "test-storage-*.json")
+	require.NoError(t, err)
+	tmpFile.Close()
+
+	storage, err := repository.NewFileStorage(tmpFile.Name())
+	require.NoError(t, err)
+
+	// Удаляем временный файл после теста
+	t.Cleanup(func() {
+		os.Remove(tmpFile.Name())
+	})
+
+	return storage
+}
+
 func TestPostHandler(t *testing.T) {
-	storage := repository.NewStorage()
+	storage := createTestStorage(t)
 	tests := []struct {
 		name           string
 		contentType    string
@@ -110,10 +131,11 @@ func TestPostHandler(t *testing.T) {
 }
 
 func TestGetHandler(t *testing.T) {
-	storage := repository.NewStorage()
+	storage := createTestStorage(t)
 	testShortURL := "abc123"
 	testOriginalURL := "https://example.com"
-	storage.Save(testShortURL, testOriginalURL)
+	err := storage.Save(testShortURL, testOriginalURL)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name           string
@@ -165,7 +187,7 @@ func TestGetHandler(t *testing.T) {
 }
 
 func TestGetHandler_SpecialCharacters(t *testing.T) {
-	storage := repository.NewStorage()
+	storage := createTestStorage(t)
 	request := httptest.NewRequest(http.MethodGet, "/test/url", nil)
 	w := httptest.NewRecorder()
 
@@ -183,7 +205,7 @@ func TestGetHandler_SpecialCharacters(t *testing.T) {
 }
 
 func TestJSONPostHandler(t *testing.T) {
-	storage := repository.NewStorage()
+	storage := createTestStorage(t)
 	baseURL := "http://localhost:8080"
 
 	tests := []struct {
@@ -245,7 +267,7 @@ func TestJSONPostHandler(t *testing.T) {
 			method:       http.MethodPost,
 			body:         `{"url": "https://example.com"}`,
 			contentType:  "application/json",
-			expectedCode: http.StatusOK,
+			expectedCode: http.StatusCreated,
 			expectedBody: "",
 			checkResult:  true,
 		},
@@ -281,7 +303,7 @@ func TestJSONPostHandler(t *testing.T) {
 				assert.Equal(t, tt.expectedBody, string(resBody))
 			}
 
-			if tt.checkResult && tt.expectedCode == http.StatusOK {
+			if tt.checkResult && tt.expectedCode == http.StatusCreated {
 				var response models.Response
 				err = json.Unmarshal(resBody, &response)
 				require.NoError(t, err)
@@ -300,7 +322,7 @@ func TestJSONPostHandler(t *testing.T) {
 }
 
 func TestGzipCompression(t *testing.T) {
-	storage := repository.NewStorage()
+	storage := createTestStorage(t)
 	baseURL := "http://localhost:8080"
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -330,7 +352,7 @@ func TestGzipCompression(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(r)
 		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 		defer resp.Body.Close()
 
@@ -360,7 +382,7 @@ func TestGzipCompression(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(r)
 		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 		defer resp.Body.Close()
 
@@ -397,7 +419,7 @@ func TestGzipCompression(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(r)
 		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 		defer resp.Body.Close()
 
@@ -427,7 +449,7 @@ func TestGzipCompression(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(r)
 		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
 
 		defer resp.Body.Close()
 

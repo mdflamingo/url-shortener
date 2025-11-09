@@ -163,7 +163,7 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 	}
 
 	response.Header().Set("Content-Type", "application/json")
-	response.WriteHeader(http.StatusOK)
+	response.WriteHeader(http.StatusCreated)
 	response.Write(respJSON)
 }
 

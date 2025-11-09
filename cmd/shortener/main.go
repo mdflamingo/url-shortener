@@ -28,7 +28,14 @@ func run(conf *config.Config) error {
 	logger.Log.Info("Running server", zap.String("address", conf.FlagRunAddr))
 	logger.Log.Info("Base short URL", zap.String("url", conf.BaseShortURL))
 
-	storage := repository.NewStorage()
+	storage, err := repository.NewFileStorage(conf.FileStoragePath)
+
+	if err != nil {
+		log.Fatal("Failed to create storage:", err)
+	}
+
+	defer storage.Close()
+
 	r := chi.NewRouter()
 
 	r.Use(logger.RequestLogger)

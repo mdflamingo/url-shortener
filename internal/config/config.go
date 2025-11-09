@@ -7,9 +7,10 @@ import (
 )
 
 type Config struct {
-	FlagRunAddr  string
-	BaseShortURL string
-	LogLevel     string
+	FlagRunAddr     string
+	BaseShortURL    string
+	LogLevel        string
+	FileStoragePath string
 }
 
 func ParseFlags() *Config {
@@ -18,12 +19,14 @@ func ParseFlags() *Config {
 	flagRunAddr := flag.String("a", ":8080", "address and port to run server")
 	baseURL := flag.String("b", "http://localhost:8080", "base address before short url")
 	logLevel := flag.String("l", "INFO", "log level")
+	fileStoragePath := flag.String("f", "urls.csv", "urls file path")
 
 	flag.Parse()
 
 	cfg.FlagRunAddr = getEnvOrDefault("SERVER_ADDRESS", *flagRunAddr)
 	cfg.BaseShortURL = getEnvOrDefault("BASE_URL", *baseURL)
 	cfg.LogLevel = strings.ToUpper(getEnvOrDefault("LOG_LEVEL", *logLevel))
+	cfg.FileStoragePath = getEnvOrDefault("FILE_STORAGE_PATH", *fileStoragePath)
 
 	return cfg
 }

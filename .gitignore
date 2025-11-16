@@ -21,3 +21,6 @@ vendor/
 # IDEs directories
 .idea
 .vscode
+urls.csv
+test_urls.csv
+shortenertest_v2-darwin-arm64

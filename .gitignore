@@ -24,3 +24,5 @@ vendor/
 urls.csv
 test_urls.csv
 shortenertest_v2-darwin-arm64
+.env
+docker-compose.yaml

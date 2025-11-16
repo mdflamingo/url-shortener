@@ -25,7 +25,7 @@ func run(conf *config.Config) error {
 		return err
 	}
 
-	logger.Log.Info("Running server", zap.String("address", conf.FlagRunAddr))
+	logger.Log.Info("Running server", zap.String("address", conf.RunAddr))
 	logger.Log.Info("Base short URL", zap.String("url", conf.BaseShortURL))
 
 	storage, err := repository.NewFileStorage(conf.FileStoragePath)
@@ -41,6 +41,9 @@ func run(conf *config.Config) error {
 	r.Use(logger.RequestLogger)
 	r.Use(gzipMiddleware)
 
+	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
+		handler.DBHealthCheck(w, r, conf.DataBaseDSN)
+	})
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
 		handler.GetHandler(w, req, storage)
 	})
@@ -51,5 +54,5 @@ func run(conf *config.Config) error {
 		handler.JSONPostHandler(w, req, conf.BaseShortURL, storage)
 	})
 
-	return http.ListenAndServe(conf.FlagRunAddr, r)
+	return http.ListenAndServe(conf.RunAddr, r)
 }

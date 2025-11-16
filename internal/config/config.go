@@ -7,26 +7,29 @@ import (
 )
 
 type Config struct {
-	FlagRunAddr     string
+	RunAddr     string
 	BaseShortURL    string
 	LogLevel        string
 	FileStoragePath string
+	DataBaseDSN string
 }
 
 func ParseFlags() *Config {
 	cfg := &Config{}
 
-	flagRunAddr := flag.String("a", ":8080", "address and port to run server")
+	RunAddr := flag.String("a", ":8080", "address and port to run server")
 	baseURL := flag.String("b", "http://localhost:8080", "base address before short url")
 	logLevel := flag.String("l", "INFO", "log level")
 	fileStoragePath := flag.String("f", "urls.csv", "urls file path")
+	dataBaseDSN := flag.String("d", "", "connect to postgres")
 
 	flag.Parse()
 
-	cfg.FlagRunAddr = getEnvOrDefault("SERVER_ADDRESS", *flagRunAddr)
+	cfg.RunAddr = getEnvOrDefault("SERVER_ADDRESS", *RunAddr)
 	cfg.BaseShortURL = getEnvOrDefault("BASE_URL", *baseURL)
 	cfg.LogLevel = strings.ToUpper(getEnvOrDefault("LOG_LEVEL", *logLevel))
 	cfg.FileStoragePath = getEnvOrDefault("FILE_STORAGE_PATH", *fileStoragePath)
+	cfg.DataBaseDSN = getEnvOrDefault("DATABASE_DSN", *dataBaseDSN)
 
 	return cfg
 }

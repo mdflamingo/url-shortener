@@ -2,12 +2,15 @@ package handler
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/mdflamingo/url-shortener/internal/logger"
 	"github.com/mdflamingo/url-shortener/internal/models"
@@ -16,6 +19,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/go-chi/chi/v5"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage *repository.FileStorage) {
@@ -189,4 +193,38 @@ func GenerateShortURL(origURL string, response http.ResponseWriter, storage *rep
 	}
 	return "", fmt.Errorf("unknown error")
 
+}
+
+func DBHealthCheck(response http.ResponseWriter, request *http.Request, pg_dsn string) {
+	logger.Log.Info("HealthCheck called", zap.String("method", request.Method))
+
+	if request.Method != http.MethodGet {
+		http.Error(response, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if pg_dsn == "" {
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	db, err := sql.Open("pgx", pg_dsn)
+	if err != nil {
+		logger.Log.Error("failed connect to postgres", zap.Error(err))
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+    defer db.Close()
+
+    ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+    defer cancel()
+
+    if err = db.PingContext(ctx); err != nil {
+		logger.Log.Error("postgres not available", zap.Error(err))
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Log.Info("HealthCheck completed successfully")
+	response.WriteHeader(http.StatusOK)
+	response.Write([]byte("OK"))
 }

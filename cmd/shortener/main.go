@@ -28,12 +28,10 @@ func run(conf *config.Config) error {
 	logger.Log.Info("Running server", zap.String("address", conf.RunAddr))
 	logger.Log.Info("Base short URL", zap.String("url", conf.BaseShortURL))
 
-	storage, err := repository.NewFileStorage(conf.FileStoragePath)
-
+	storage, err := initStorage(conf)
 	if err != nil {
-		log.Fatal("Failed to create storage:", err)
+		logger.Log.Fatal("Failed to create storage", zap.Error(err))
 	}
-
 	defer storage.Close()
 
 	r := chi.NewRouter()
@@ -55,4 +53,31 @@ func run(conf *config.Config) error {
 	})
 
 	return http.ListenAndServe(conf.RunAddr, r)
+}
+
+func initStorage(conf *config.Config) (repository.URLStorage, error) {
+	if conf.DataBaseDSN != "" {
+		logger.Log.Info("Attempting to use database storage", zap.String("dsn", conf.DataBaseDSN))
+		dbStorage, err := repository.NewDBStorage(conf.DataBaseDSN)
+		if err != nil {
+			logger.Log.Error("Failed to initialize database storage, falling back to next option", zap.Error(err))
+		} else {
+			logger.Log.Info("Successfully initialized database storage")
+			return dbStorage, nil
+		}
+	}
+
+	if conf.FileStoragePath != "" {
+		logger.Log.Info("Attempting to use file storage", zap.String("path", conf.FileStoragePath))
+		fileStorage, err := repository.NewFileStorage(conf.FileStoragePath)
+		if err != nil {
+			logger.Log.Error("Failed to initialize file storage, falling back to memory", zap.Error(err))
+		} else {
+			logger.Log.Info("Successfully initialized file storage")
+			return fileStorage, nil
+		}
+	}
+
+	logger.Log.Info("Using in-memory storage")
+	return repository.NewMemoryStorage(), nil
 }

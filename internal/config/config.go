@@ -7,11 +7,11 @@ import (
 )
 
 type Config struct {
-	RunAddr     string
+	RunAddr         string
 	BaseShortURL    string
 	LogLevel        string
 	FileStoragePath string
-	DataBaseDSN string
+	DataBaseDSN     string
 }
 
 func ParseFlags() *Config {

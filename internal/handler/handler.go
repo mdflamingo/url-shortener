@@ -22,7 +22,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage *repository.FileStorage) {
+func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	if request.Header.Get("Content-Type") != "text/plain" {
 		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
 		http.Error(
@@ -83,7 +83,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 	response.Write([]byte(fullURL))
 }
 
-func GetHandler(response http.ResponseWriter, request *http.Request, storage *repository.FileStorage) {
+func GetHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
 	id := chi.URLParam(request, "id")
 	origURL, ok := storage.Get(id)
 
@@ -96,7 +96,7 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage *re
 	}
 }
 
-func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage *repository.FileStorage) {
+func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	if request.Method != http.MethodPost {
 		http.Error(response, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
@@ -171,7 +171,7 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 	response.Write(respJSON)
 }
 
-func GenerateShortURL(origURL string, response http.ResponseWriter, storage *repository.FileStorage) (string, error) {
+func GenerateShortURL(origURL string, response http.ResponseWriter, storage repository.URLStorage) (string, error) {
 	var maxAttempts = 10
 	var shortURL string
 
@@ -213,12 +213,12 @@ func DBHealthCheck(response http.ResponseWriter, request *http.Request, pg_dsn s
 		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-    defer db.Close()
+	defer db.Close()
 
-    ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
 
-    if err = db.PingContext(ctx); err != nil {
+	if err = db.PingContext(ctx); err != nil {
 		logger.Log.Error("postgres not available", zap.Error(err))
 		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return

@@ -16,6 +16,8 @@ import (
 	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/mdflamingo/url-shortener/internal/service"
+
+	// "github.com/mdflamingo/url-shortener/internal/service"
 	"go.uber.org/zap"
 
 	"github.com/go-chi/chi/v5"
@@ -59,7 +61,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	shortURL, err := GenerateShortURL(string(body), response, storage)
+	shortURL, err := GenerateAndSaveShortURL(string(body), response, storage)
 
 	if err != nil {
 		logger.Log.Error("Failed to generate short URL",
@@ -134,7 +136,7 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		http.Error(response, "URL cannot be empty", http.StatusBadRequest)
 		return
 	}
-	shortURL, err := GenerateShortURL(origURL.URL, response, storage)
+	shortURL, err := GenerateAndSaveShortURL(origURL.URL, response, storage)
 
 	if err != nil {
 		logger.Log.Error("Failed to generate short URL",
@@ -171,7 +173,98 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 	response.Write(respJSON)
 }
 
-func GenerateShortURL(origURL string, response http.ResponseWriter, storage repository.URLStorage) (string, error) {
+func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
+	if request.Method != http.MethodPost {
+		http.Error(response, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	if request.Header.Get("Content-Type") != "application/json" {
+		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
+		http.Error(
+			response,
+			"Invalid Content-Type",
+			http.StatusUnsupportedMediaType,
+		)
+		return
+	}
+
+	var batches []models.BatchRequest
+	var buf bytes.Buffer
+
+	_, err := buf.ReadFrom(request.Body)
+	if err != nil {
+		logger.Log.Error("failed to read request body", zap.Error(err))
+		http.Error(response, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err = json.Unmarshal(buf.Bytes(), &batches); err != nil {
+		logger.Log.Error("Failed to unmarshal JSON",
+			zap.Error(err),
+			zap.String("request_body", buf.String()))
+		http.Error(response, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	urlPairs := make([]repository.URLPair, 0, len(batches))
+	responses := make([]models.BatchResponse, 0, len(batches))
+
+	for _, row := range batches {
+		if row.Original_url == "" {
+			http.Error(response, "URL cannot be empty", http.StatusBadRequest)
+			return
+		}
+
+		if _, err := url.ParseRequestURI(row.Original_url); err != nil {
+			logger.Log.Warn("invalid URL",
+				zap.String("url", row.Original_url),
+				zap.Error(err))
+			http.Error(response, "Invalid URL format", http.StatusBadRequest)
+			return
+		}
+
+		shortURL := service.GenerateShortURLForBatch(row.Original_url)
+		fullURL, err := url.JoinPath(baseURL, shortURL)
+		if err != nil {
+			logger.Log.Error("failed to join URL path",
+				zap.String("base_url", baseURL),
+				zap.String("short_url", shortURL),
+				zap.Error(err))
+			http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		urlPairs = append(urlPairs, repository.URLPair{
+			ShortURL:    shortURL,
+			OriginalURL: row.Original_url,
+		})
+
+		responses = append(responses, models.BatchResponse{
+			Correlation_id: row.Correlation_id,
+			Short_url:      fullURL,
+		})
+	}
+
+	if err := storage.SaveMany(urlPairs); err != nil {
+		logger.Log.Error("Failed to save URLs in batch", zap.Error(err))
+		http.Error(response, "Failed to save URLs: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respJSON, err := json.Marshal(responses)
+	if err != nil {
+		logger.Log.Error("Failed to marshal response to JSON", zap.Error(err))
+		http.Error(response, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(http.StatusCreated)
+	response.Write(respJSON)
+}
+
+func GenerateAndSaveShortURL(origURL string, response http.ResponseWriter, storage repository.URLStorage) (string, error) {
 	var maxAttempts = 10
 	var shortURL string
 

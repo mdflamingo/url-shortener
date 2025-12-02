@@ -9,6 +9,11 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+type URLPair struct {
+	ShortURL    string
+	OriginalURL string
+}
+
 type DBStorage struct {
 	db *sql.DB
 }
@@ -39,6 +44,46 @@ func (d *DBStorage) Save(shortURL, originalURL string) error {
 
 	if err != nil {
 		return fmt.Errorf("failed to save URL: %w", err)
+	}
+
+	return nil
+}
+
+func (d *DBStorage) SaveMany(urls []URLPair) error {
+	if len(urls) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	stmt, err := tx.PrepareContext(ctx,
+		"INSERT INTO urls (short_url, full_url) VALUES ($1, $2) ON CONFLICT (full_url) DO NOTHING")
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, url := range urls {
+		_, err = stmt.ExecContext(ctx, url.ShortURL, url.OriginalURL)
+		if err != nil {
+			return fmt.Errorf("failed to execute insert: %w", err)
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil

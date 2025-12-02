@@ -22,6 +22,15 @@ func (s *MemoryStorage) Save(shortURL, origURL string) error {
 	return nil
 }
 
+func (s *MemoryStorage) SaveMany(urls []URLPair) error {
+	for _, url := range urls {
+		if err := s.Save(url.ShortURL, url.OriginalURL); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *MemoryStorage) Get(shortURL string) (string, bool) {
 	origURL, exists := s.data[shortURL]
 	return origURL, exists

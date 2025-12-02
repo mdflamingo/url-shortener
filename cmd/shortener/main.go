@@ -51,6 +51,9 @@ func run(conf *config.Config) error {
 	r.Post("/api/shorten", func(w http.ResponseWriter, req *http.Request) {
 		handler.JSONPostHandler(w, req, conf.BaseShortURL, storage)
 	})
+	r.Post("/api/shorten/batch", func(w http.ResponseWriter, req *http.Request) {
+		handler.BatchHandler(w, req, conf.BaseShortURL, storage)
+	})
 
 	return http.ListenAndServe(conf.RunAddr, r)
 }

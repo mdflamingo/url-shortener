@@ -88,6 +88,15 @@ func (fs *FileStorage) checkExists(shortURL string) (bool, error) {
 	return exists, nil
 }
 
+func (fs *FileStorage) SaveMany(urls []URLPair) error {
+	for _, url := range urls {
+		if err := fs.Save(url.ShortURL, url.OriginalURL); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (fs *FileStorage) findInFile(shortURL string) (string, bool) {
 	file, err := os.OpenFile(fs.filename, os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {

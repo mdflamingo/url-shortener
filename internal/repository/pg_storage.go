@@ -45,7 +45,7 @@ func NewDBStorage(dsn string) (*DBStorage, error) {
 		return nil, fmt.Errorf("failed to create table: %w", err)
 	}
 
-	_, err = db.ExecContext(ctx, `CREATE INDEX idx_urls_short_urls ON urls(short_url);`)
+	_, err = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_urls_short_urls ON urls(short_url);`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create index: %w", err)
 	}

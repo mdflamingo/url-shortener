@@ -44,16 +44,16 @@ func NewFileStorage(filename string) (*FileStorage, error) {
 	return storage, nil
 }
 
-func (fs *FileStorage) Save(shortURL, originalURL string) error {
+func (fs *FileStorage) Save(shortURL, originalURL string) (string, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
 	exists, err := fs.checkExists(shortURL)
 	if err != nil {
-		return fmt.Errorf("failed to check URL existence: %w", err)
+		return "", fmt.Errorf("failed to check URL existence: %w", err)
 	}
 	if exists {
-		return fmt.Errorf("short URL already exists: %s", shortURL)
+		return "", fmt.Errorf("short URL already exists: %s", shortURL)
 	}
 
 	url := &URL{
@@ -62,10 +62,10 @@ func (fs *FileStorage) Save(shortURL, originalURL string) error {
 	}
 
 	if err := fs.producer.WriteURL(url); err != nil {
-		return fmt.Errorf("failed to write URL to file: %w", err)
+		return "", fmt.Errorf("failed to write URL to file: %w", err)
 	}
 
-	return nil
+	return url.ShortURL, nil
 }
 
 func (fs *FileStorage) Get(shortURL string) (string, bool) {
@@ -90,7 +90,7 @@ func (fs *FileStorage) checkExists(shortURL string) (bool, error) {
 
 func (fs *FileStorage) SaveMany(urls []URLPair) error {
 	for _, url := range urls {
-		if err := fs.Save(url.ShortURL, url.OriginalURL); err != nil {
+		if _, err := fs.Save(url.ShortURL, url.OriginalURL); err != nil {
 			return err
 		}
 	}

@@ -14,17 +14,17 @@ func NewMemoryStorage() *MemoryStorage {
 	}
 }
 
-func (s *MemoryStorage) Save(shortURL, origURL string) error {
+func (s *MemoryStorage) Save(shortURL, origURL string) (string, error) {
 	if _, ok := s.data[shortURL]; ok {
-		return ErrURLExists
+		return "", ErrURLExists
 	}
 	s.data[shortURL] = origURL
-	return nil
+	return shortURL, nil
 }
 
 func (s *MemoryStorage) SaveMany(urls []URLPair) error {
 	for _, url := range urls {
-		if err := s.Save(url.ShortURL, url.OriginalURL); err != nil {
+		if _, err := s.Save(url.ShortURL, url.OriginalURL); err != nil {
 			return err
 		}
 	}

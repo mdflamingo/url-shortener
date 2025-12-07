@@ -3,9 +3,12 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -34,19 +37,29 @@ func NewDBStorage(dsn string) (*DBStorage, error) {
 	return &DBStorage{db: db}, nil
 }
 
-func (d *DBStorage) Save(shortURL, originalURL string) error {
+func (d *DBStorage) Save(shortURL, originalURL string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, err := d.db.ExecContext(ctx,
-		"INSERT INTO urls (short_url, full_url) VALUES ($1, $2)",
-		shortURL, originalURL)
+	var returnedShortURL string
+
+	err := d.db.QueryRowContext(ctx,
+		`INSERT INTO urls (short_url, full_url)
+         VALUES ($1, $2)
+         ON CONFLICT (full_url)
+         DO UPDATE SET full_url = EXCLUDED.full_url
+         RETURNING short_url`,
+		shortURL, originalURL).Scan(&returnedShortURL)
 
 	if err != nil {
-		return fmt.Errorf("failed to save URL: %w", err)
+		return "", fmt.Errorf("failed to save URL: %w", err)
 	}
 
-	return nil
+	if returnedShortURL != shortURL {
+		return returnedShortURL, ErrConflict
+	}
+
+	return returnedShortURL, nil
 }
 
 func (d *DBStorage) SaveMany(urls []URLPair) error {
@@ -62,23 +75,32 @@ func (d *DBStorage) SaveMany(urls []URLPair) error {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
+	rolledBack := false
 	defer func() {
-		if err != nil {
+		if !rolledBack && err != nil {
 			tx.Rollback()
 		}
 	}()
 
 	stmt, err := tx.PrepareContext(ctx,
-		"INSERT INTO urls (short_url, full_url) VALUES ($1, $2) ON CONFLICT (full_url) DO NOTHING")
+		"INSERT INTO urls (short_url, full_url) VALUES ($1, $2) ON CONFLICT (full_url) DO NOTHING RETURNING short_url")
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
 	defer stmt.Close()
 
 	for _, url := range urls {
-		_, err = stmt.ExecContext(ctx, url.ShortURL, url.OriginalURL)
-		if err != nil {
-			return fmt.Errorf("failed to execute insert: %w", err)
+		_, execErr := stmt.ExecContext(ctx, url.ShortURL, url.OriginalURL)
+		if execErr != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(execErr, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+				tx.Rollback()
+				rolledBack = true
+				return ErrConflict
+			}
+			tx.Rollback()
+			rolledBack = true
+			return fmt.Errorf("failed to execute insert: %w", execErr)
 		}
 	}
 

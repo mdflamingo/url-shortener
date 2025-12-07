@@ -286,7 +286,7 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 
 		urlPairs = append(urlPairs, repository.URLPair{
 			ShortURL:    shortURL,
-			OriginalURL: row.CorrelationID,
+			OriginalURL: row.OriginalURL,
 		})
 
 		responses = append(responses, models.BatchResponse{

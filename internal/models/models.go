@@ -8,11 +8,11 @@ type Response struct {
 }
 
 type BatchRequest struct {
-	Correlation_id string `json:"correlation_id"`
-	Original_url   string `json:"original_url"`
+	CorrelationID string `json:"correlation_id"`
+	OriginalURL   string `json:"original_url"`
 }
 
 type BatchResponse struct {
-	Correlation_id string `json:"correlation_id"`
-	Short_url      string `json:"short_url"`
+	CorrelationID string `json:"correlation_id"`
+	ShortURL      string `json:"short_url"`
 }

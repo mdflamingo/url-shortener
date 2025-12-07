@@ -260,20 +260,20 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 	responses := make([]models.BatchResponse, 0, len(batches))
 
 	for _, row := range batches {
-		if row.Original_url == "" {
+		if row.OriginalURL == "" {
 			http.Error(response, "URL cannot be empty", http.StatusBadRequest)
 			return
 		}
 
-		if _, err := url.ParseRequestURI(row.Original_url); err != nil {
+		if _, err := url.ParseRequestURI(row.OriginalURL); err != nil {
 			logger.Log.Warn("invalid URL",
-				zap.String("url", row.Original_url),
+				zap.String("url", row.OriginalURL),
 				zap.Error(err))
 			http.Error(response, "Invalid URL format", http.StatusBadRequest)
 			return
 		}
 
-		shortURL := service.GenerateShortURLForBatch(row.Original_url)
+		shortURL := service.GenerateShortURLForBatch(row.OriginalURL)
 		fullURL, err := url.JoinPath(baseURL, shortURL)
 		if err != nil {
 			logger.Log.Error("failed to join URL path",
@@ -286,12 +286,12 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 
 		urlPairs = append(urlPairs, repository.URLPair{
 			ShortURL:    shortURL,
-			OriginalURL: row.Original_url,
+			OriginalURL: row.CorrelationID,
 		})
 
 		responses = append(responses, models.BatchResponse{
-			Correlation_id: row.Correlation_id,
-			Short_url:      fullURL,
+			CorrelationID: row.CorrelationID,
+			ShortURL:      fullURL,
 		})
 	}
 
@@ -333,19 +333,19 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage) 
 	return "", fmt.Errorf("failed to generate unique short URL after %d attempts", maxAttempts)
 }
 
-func DBHealthCheck(response http.ResponseWriter, request *http.Request, pg_dsn string) {
+func DBHealthCheck(response http.ResponseWriter, request *http.Request, pgDsn string) {
 	logger.Log.Info("HealthCheck called", zap.String("method", request.Method))
 
 	if request.Method != http.MethodGet {
 		http.Error(response, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if pg_dsn == "" {
+	if pgDsn == "" {
 		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	db, err := sql.Open("pgx", pg_dsn)
+	db, err := sql.Open("pgx", pgDsn)
 	if err != nil {
 		logger.Log.Error("failed connect to postgres", zap.Error(err))
 		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)

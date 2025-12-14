@@ -52,6 +52,6 @@ func (s *MemoryStorage) Get(shortURL string) (string, bool) {
 func (s *MemoryStorage) Close() error {
 	return nil
 }
-func (d *MemoryStorage) Ping(ctx context.Context) error {
+func (s *MemoryStorage) Ping(ctx context.Context) error {
 	return nil
 }

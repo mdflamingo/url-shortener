@@ -1,6 +1,11 @@
 package repository
 
-import "errors"
+import (
+	"context"
+	"errors"
+
+	"github.com/mdflamingo/url-shortener/internal/service"
+)
 
 var ErrURLExists = errors.New("short URL already exists")
 
@@ -22,13 +27,21 @@ func (s *MemoryStorage) Save(shortURL, origURL string) (string, error) {
 	return shortURL, nil
 }
 
-func (s *MemoryStorage) SaveMany(urls []URLPair) error {
-	for _, url := range urls {
-		if _, err := s.Save(url.ShortURL, url.OriginalURL); err != nil {
-			return err
+func (s *MemoryStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
+	for i, url := range urls {
+		for {
+			_, err := s.Save(url.ShortURL, url.OriginalURL)
+			if err != nil {
+				if errors.Is(err, ErrURLExists) {
+					urls[i].ShortURL = service.GenerateShortURLForBatch(url.OriginalURL)
+					continue
+				}
+				return nil, err
+			}
+			break
 		}
 	}
-	return nil
+	return urls, nil
 }
 
 func (s *MemoryStorage) Get(shortURL string) (string, bool) {
@@ -37,5 +50,8 @@ func (s *MemoryStorage) Get(shortURL string) (string, bool) {
 }
 
 func (s *MemoryStorage) Close() error {
+	return nil
+}
+func (d *MemoryStorage) Ping(ctx context.Context) error {
 	return nil
 }

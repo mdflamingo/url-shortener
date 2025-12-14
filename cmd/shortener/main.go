@@ -40,7 +40,7 @@ func run(conf *config.Config) error {
 	r.Use(gzipMiddleware)
 
 	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
-		handler.DBHealthCheck(w, r, conf.DataBaseDSN)
+		handler.DBHealthCheck(w, r, storage)
 	})
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
 		handler.GetHandler(w, req, storage)
@@ -63,22 +63,22 @@ func initStorage(conf *config.Config) (repository.URLStorage, error) {
 		logger.Log.Info("Attempting to use database storage", zap.String("dsn", conf.DataBaseDSN))
 		dbStorage, err := repository.NewDBStorage(conf.DataBaseDSN)
 		if err != nil {
-			logger.Log.Error("Failed to initialize database storage, falling back to next option", zap.Error(err))
-		} else {
-			logger.Log.Info("Successfully initialized database storage")
-			return dbStorage, nil
+			logger.Log.Error("Failed to initialize database storage", zap.Error(err))
+			return nil, err
 		}
+		logger.Log.Info("Successfully initialized database storage")
+		return dbStorage, nil
 	}
 
 	if conf.FileStoragePath != "" {
 		logger.Log.Info("Attempting to use file storage", zap.String("path", conf.FileStoragePath))
 		fileStorage, err := repository.NewFileStorage(conf.FileStoragePath)
 		if err != nil {
-			logger.Log.Error("Failed to initialize file storage, falling back to memory", zap.Error(err))
-		} else {
-			logger.Log.Info("Successfully initialized file storage")
-			return fileStorage, nil
+			logger.Log.Error("Failed to initialize file storage", zap.Error(err))
+			return nil, err
 		}
+		logger.Log.Info("Successfully initialized file storage")
+		return fileStorage, nil
 	}
 
 	logger.Log.Info("Using in-memory storage")

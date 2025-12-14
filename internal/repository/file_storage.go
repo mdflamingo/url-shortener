@@ -2,11 +2,14 @@ package repository
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"sync"
+
+	"github.com/mdflamingo/url-shortener/internal/service"
 )
 
 type FileStorage struct {
@@ -68,6 +71,23 @@ func (fs *FileStorage) Save(shortURL, originalURL string) (string, error) {
 	return url.ShortURL, nil
 }
 
+func (fs *FileStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
+	for i, url := range urls {
+		for {
+			_, err := fs.Save(url.ShortURL, url.OriginalURL)
+			if err != nil {
+				if fmt.Sprintf("%v", err) == fmt.Sprintf("short URL already exists: %s", url.ShortURL) {
+					urls[i].ShortURL = service.GenerateShortURLForBatch(url.OriginalURL)
+					continue
+				}
+				return nil, err
+			}
+			break
+		}
+	}
+	return urls, nil
+}
+
 func (fs *FileStorage) Get(shortURL string) (string, bool) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -86,15 +106,6 @@ func (fs *FileStorage) Close() error {
 func (fs *FileStorage) checkExists(shortURL string) (bool, error) {
 	_, exists := fs.findInFile(shortURL)
 	return exists, nil
-}
-
-func (fs *FileStorage) SaveMany(urls []URLPair) error {
-	for _, url := range urls {
-		if _, err := fs.Save(url.ShortURL, url.OriginalURL); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (fs *FileStorage) findInFile(shortURL string) (string, bool) {
@@ -204,5 +215,9 @@ func (c *Consumer) Close() error {
 	if c.file != nil {
 		return c.file.Close()
 	}
+	return nil
+}
+
+func (fs *FileStorage) Ping(ctx context.Context) error {
 	return nil
 }

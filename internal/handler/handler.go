@@ -3,7 +3,6 @@ package handler
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -118,10 +117,6 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage rep
 }
 
 func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-	if request.Method != http.MethodPost {
-		http.Error(response, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
 
 	if request.Header.Get("Content-Type") != "application/json" {
 		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
@@ -223,21 +218,6 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 }
 
 func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-	if request.Method != http.MethodPost {
-		http.Error(response, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
-	if request.Header.Get("Content-Type") != "application/json" {
-		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
-		http.Error(
-			response,
-			"Invalid Content-Type",
-			http.StatusUnsupportedMediaType,
-		)
-		return
-	}
-
 	var batches []models.BatchRequest
 	var buf bytes.Buffer
 
@@ -257,7 +237,6 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 	}
 
 	urlPairs := make([]repository.URLPair, 0, len(batches))
-	responses := make([]models.BatchResponse, 0, len(batches))
 
 	for _, row := range batches {
 		if row.OriginalURL == "" {
@@ -274,31 +253,35 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 		}
 
 		shortURL := service.GenerateShortURLForBatch(row.OriginalURL)
-		fullURL, err := url.JoinPath(baseURL, shortURL)
+		urlPairs = append(urlPairs, repository.URLPair{
+			ShortURL:    shortURL,
+			OriginalURL: row.OriginalURL,
+		})
+	}
+
+	updatedPairs, err := storage.SaveMany(urlPairs)
+	if err != nil {
+		logger.Log.Error("Failed to save URLs in batch", zap.Error(err))
+		http.Error(response, "Failed to save URLs: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	responses := make([]models.BatchResponse, 0, len(updatedPairs))
+	for i, pair := range updatedPairs {
+		fullURL, err := url.JoinPath(baseURL, pair.ShortURL)
 		if err != nil {
 			logger.Log.Error("failed to join URL path",
 				zap.String("base_url", baseURL),
-				zap.String("short_url", shortURL),
+				zap.String("short_url", pair.ShortURL),
 				zap.Error(err))
 			http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 
-		urlPairs = append(urlPairs, repository.URLPair{
-			ShortURL:    shortURL,
-			OriginalURL: row.OriginalURL,
-		})
-
 		responses = append(responses, models.BatchResponse{
-			CorrelationID: row.CorrelationID,
+			CorrelationID: batches[i].CorrelationID,
 			ShortURL:      fullURL,
 		})
-	}
-
-	if err := storage.SaveMany(urlPairs); err != nil {
-		logger.Log.Error("Failed to save URLs in batch", zap.Error(err))
-		http.Error(response, "Failed to save URLs: "+err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	respJSON, err := json.Marshal(responses)
@@ -325,7 +308,10 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage) 
 		}
 
 		if errors.Is(err, repository.ErrConflict) {
-			return savedShortURL, err
+			if savedShortURL != "" {
+				return savedShortURL, err
+			}
+			continue
 		}
 
 	}
@@ -333,31 +319,14 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage) 
 	return "", fmt.Errorf("failed to generate unique short URL after %d attempts", maxAttempts)
 }
 
-func DBHealthCheck(response http.ResponseWriter, request *http.Request, pgDsn string) {
+func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
 	logger.Log.Info("HealthCheck called", zap.String("method", request.Method))
-
-	if request.Method != http.MethodGet {
-		http.Error(response, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if pgDsn == "" {
-		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-
-	db, err := sql.Open("pgx", pgDsn)
-	if err != nil {
-		logger.Log.Error("failed connect to postgres", zap.Error(err))
-		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-	defer db.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	if err = db.PingContext(ctx); err != nil {
-		logger.Log.Error("postgres not available", zap.Error(err))
+	if err := storage.Ping(ctx); err != nil {
+		logger.Log.Error("storage not available", zap.Error(err))
 		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}

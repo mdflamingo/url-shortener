@@ -175,6 +175,6 @@ func runMigrations(dsn string) error {
 	return nil
 }
 
-func (s *DBStorage) Ping(ctx context.Context) error {
-	return s.pool.Ping(ctx)
+func (d *DBStorage) Ping(ctx context.Context) error {
+	return d.pool.Ping(ctx)
 }

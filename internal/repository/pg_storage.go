@@ -144,35 +144,29 @@ func (d *DBStorage) Close() error {
 }
 
 func runMigrations(dsn string) error {
-	// 1. Открываем соединение с БД
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer db.Close()
 
-	// 2. Проверяем соединение
 	if err := db.Ping(); err != nil {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// 3. Создаем драйвер для миграций
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
 		return fmt.Errorf("failed to create migration driver: %w", err)
 	}
 
-	// 4. Инициализируем миграции
-	// ВАЖНО: путь file://migrations означает папку migrations В КОРНЕ ПРОЕКТА
 	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations", // путь к папке с миграциями
-		"postgres",          // имя базы данных
+		"file://migrations",
+		"postgres",
 		driver)
 	if err != nil {
 		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
 
-	// 5. Применяем миграции
 	err = m.Up()
 	if err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("failed to run migrations: %w", err)

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -144,38 +144,43 @@ func (d *DBStorage) Close() error {
 }
 
 func runMigrations(dsn string) error {
-	db, err := sql.Open("pgx", dsn)
+	// 1. Открываем соединение с БД
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		return fmt.Errorf("failed to open sql.DB: %w", err)
+		return fmt.Errorf("failed to open database: %w", err)
 	}
 	defer db.Close()
 
+	// 2. Проверяем соединение
 	if err := db.Ping(); err != nil {
-		return fmt.Errorf("failed to ping sql.DB: %w", err)
+		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	driver, err := pgx.WithInstance(db, nil)
+	// 3. Создаем драйвер для миграций
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
 		return fmt.Errorf("failed to create migration driver: %w", err)
 	}
 
+	// 4. Инициализируем миграции
+	// ВАЖНО: путь file://migrations означает папку migrations В КОРНЕ ПРОЕКТА
 	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations",
-		"postgres",
-		driver,
-	)
+		"file://migrations", // путь к папке с миграциями
+		"postgres",          // имя базы данных
+		driver)
 	if err != nil {
-		return fmt.Errorf("failed to create migrator: %w", err)
+		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
-	defer m.Close()
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("failed to apply migrations: %w", err)
+	// 5. Применяем миграции
+	err = m.Up()
+	if err != nil && err != migrate.ErrNoChange {
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	return nil
 }
 
-func (d *DBStorage) Ping(ctx context.Context) error {
-	return d.pool.Ping(ctx)
+func (s *DBStorage) Ping(ctx context.Context) error {
+	return s.pool.Ping(ctx)
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 func main() {

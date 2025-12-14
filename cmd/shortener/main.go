@@ -61,24 +61,20 @@ func run(conf *config.Config) error {
 func initStorage(conf *config.Config) (repository.URLStorage, error) {
 	if conf.DataBaseDSN != "" {
 		logger.Log.Info("Attempting to use database storage", zap.String("dsn", conf.DataBaseDSN))
-		dbStorage, err := repository.NewDBStorage(conf.DataBaseDSN)
-		if err != nil {
-			logger.Log.Error("Failed to initialize database storage", zap.Error(err))
-			return nil, err
+		if storage, err := repository.NewDBStorage(conf.DataBaseDSN); err == nil {
+			logger.Log.Info("Successfully initialized database storage")
+			return storage, nil
 		}
-		logger.Log.Info("Successfully initialized database storage")
-		return dbStorage, nil
+		logger.Log.Warn("Failed to initialize database storage, trying file storage")
 	}
 
 	if conf.FileStoragePath != "" {
 		logger.Log.Info("Attempting to use file storage", zap.String("path", conf.FileStoragePath))
-		fileStorage, err := repository.NewFileStorage(conf.FileStoragePath)
-		if err != nil {
-			logger.Log.Error("Failed to initialize file storage", zap.Error(err))
-			return nil, err
+		if storage, err := repository.NewFileStorage(conf.FileStoragePath); err == nil {
+			logger.Log.Info("Successfully initialized file storage")
+			return storage, nil
 		}
-		logger.Log.Info("Successfully initialized file storage")
-		return fileStorage, nil
+		logger.Log.Warn("Failed to initialize file storage, using in-memory storage")
 	}
 
 	logger.Log.Info("Using in-memory storage")

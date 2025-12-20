@@ -6,15 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/mdflamingo/url-shortener/internal/service"
 )
 
 type URLPair struct {
@@ -118,36 +117,35 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
     }
 
     br := tx.SendBatch(ctx, batch)
-    defer br.Close()
+
+    results := make([]string, len(urls))
 
     for i := 0; i < len(urls); i++ {
-        var returnedShortURL string
-        err := br.QueryRow().Scan(&returnedShortURL)
-
+        err := br.QueryRow().Scan(&results[i])
         if err != nil {
             var pgErr *pgconn.PgError
             if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-                newShortURL := service.GenerateShortURLForBatch(urls[i].OriginalURL)
-
-                err = tx.QueryRow(ctx,
-                    `INSERT INTO urls (short_url, full_url)
-                     VALUES ($1, $2)
-                     ON CONFLICT (full_url)
-                     DO UPDATE SET short_url = EXCLUDED.short_url
-                     RETURNING short_url`,
-                    newShortURL, urls[i].OriginalURL).Scan(&returnedShortURL)
-
-                if err != nil {
-                    return nil, fmt.Errorf("failed to insert URL after conflict: %w", err)
+                var existingShortURL string
+                if queryErr := tx.QueryRow(ctx,
+                    `SELECT short_url FROM urls WHERE full_url = $1`,
+                    urls[i].OriginalURL).Scan(&existingShortURL); queryErr != nil {
+                    br.Close()
+                    return nil, fmt.Errorf("failed to get existing URL for %s: %w", urls[i].OriginalURL, queryErr)
                 }
 
-                urls[i].ShortURL = returnedShortURL
-                continue
+                urls[i].ShortURL = existingShortURL
+                results[i] = existingShortURL
+            } else {
+                br.Close()
+                return nil, fmt.Errorf("failed to insert URL at index %d: %w", i, err)
             }
-            return nil, fmt.Errorf("failed to insert URL: %w", err)
+        } else {
+            urls[i].ShortURL = results[i]
         }
+    }
 
-        urls[i].ShortURL = returnedShortURL
+    if err := br.Close(); err != nil {
+        return nil, fmt.Errorf("failed to close batch: %w", err)
     }
 
     if err := tx.Commit(ctx); err != nil {

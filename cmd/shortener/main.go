@@ -6,7 +6,6 @@ import (
 	"github.com/mdflamingo/url-shortener/internal/logger"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"go.uber.org/zap"
-
 	"log"
 	"net/http"
 
@@ -37,8 +36,12 @@ func run(conf *config.Config) error {
 
 	r := chi.NewRouter()
 
+	cookieSecret := conf.CookieSecretKey
+	cookieMiddleware := NewSignedCookieMiddleware(cookieSecret)
+
 	r.Use(logger.RequestLogger)
 	r.Use(gzipMiddleware)
+	r.Use(cookieMiddleware.CookieMiddleware)
 
 	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
 		handler.DBHealthCheck(w, r, storage)
@@ -54,6 +57,9 @@ func run(conf *config.Config) error {
 	})
 	r.Post("/api/shorten/batch", func(w http.ResponseWriter, req *http.Request) {
 		handler.BatchHandler(w, req, conf.BaseShortURL, storage)
+	})
+	r.Get("/api/user/urls", func(w http.ResponseWriter, req *http.Request) {
+		handler.UserURLSHandler(w, req, conf.BaseShortURL, storage)
 	})
 
 	return http.ListenAndServe(conf.RunAddr, r)

@@ -44,6 +44,10 @@ func (s *MemoryStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	return urls, nil
 }
 
+func (s *MemoryStorage) GetByUserID(urls []URLPair) ([]URLPair, error) {
+	return []URLPair{}, nil
+}
+
 func (s *MemoryStorage) Get(shortURL string) (string, bool) {
 	origURL, exists := s.data[shortURL]
 	return origURL, exists

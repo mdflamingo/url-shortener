@@ -16,3 +16,8 @@ type BatchResponse struct {
 	CorrelationID string `json:"correlation_id"`
 	ShortURL      string `json:"short_url"`
 }
+
+type ResponseByUser struct {
+	OriginalURL string `json:"original_id"`
+	ShortURL      string `json:"short_url"`
+}

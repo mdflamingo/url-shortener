@@ -119,6 +119,7 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	}
 	return urls, nil
 }
+
 func (d *DBStorage) Get(shortURL string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -136,6 +137,41 @@ func (d *DBStorage) Get(shortURL string) (string, bool) {
 	}
 
 	return originalURL, true
+}
+
+func (d *DBStorage) GetByUserID(userID string) ([]URLPair, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+    defer cancel()
+
+    rows, err := d.pool.Query(ctx,
+        "SELECT short_url, full_url FROM urls WHERE user_id = $1",
+        userID)
+
+    if err != nil {
+        return nil, fmt.Errorf("database query error: %w", err)
+    }
+    defer rows.Close()
+
+    var urls []URLPair
+
+    for rows.Next() {
+		var url URLPair
+
+        if err := rows.Scan(&url.ShortURL, &url.OriginalURL); err != nil {
+            return nil, fmt.Errorf("data scan error: %w", err)
+        }
+        urls = append(urls, url)
+    }
+
+    if err = rows.Err(); err != nil {
+        return nil, fmt.Errorf("rows processing error: %w", err)
+    }
+
+    if len(urls) == 0 {
+        return []URLPair{}, nil
+    }
+
+    return urls, nil
 }
 
 func (d *DBStorage) Close() error {

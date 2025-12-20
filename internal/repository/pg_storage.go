@@ -10,6 +10,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -93,32 +94,54 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	if len(urls) == 0 {
 		return urls, nil
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	tx, err := d.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	batch := &pgx.Batch{}
+
+	results := make([]string, len(urls))
+
 	for i, url := range urls {
-		for {
-			var returnedShortURL string
-			err := d.pool.QueryRow(ctx,
-				`INSERT INTO urls (short_url, full_url)
-                 VALUES ($1, $2)
-                 ON CONFLICT (full_url)
-                 DO UPDATE SET short_url = urls.short_url  -- Обновляем на тот же (ничего не меняем)
-                 RETURNING short_url`,
-				url.ShortURL, url.OriginalURL).Scan(&returnedShortURL)
-			if err != nil {
-				var pgErr *pgconn.PgError
-				if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-					urls[i].ShortURL = service.GenerateShortURLForBatch(url.OriginalURL)
-					continue
-				}
+		batch.Queue(
+			`INSERT INTO urls (short_url, full_url)
+             VALUES ($1, $2)
+             ON CONFLICT (full_url)
+             DO UPDATE SET short_url = EXCLUDED.short_url
+             RETURNING short_url`,
+			url.ShortURL, url.OriginalURL,
+		).Scan(&results[i])
+	}
+
+	br := tx.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for i := 0; i < len(urls); i++ {
+		if err := br.QueryRow().Scan(&results[i]); err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+				urls[i].ShortURL = service.GenerateShortURLForBatch(urls[i].OriginalURL)
+			} else {
 				return nil, fmt.Errorf("failed to insert URL: %w", err)
 			}
-			urls[i].ShortURL = returnedShortURL
-			break
+		} else {
+			urls[i].ShortURL = results[i]
 		}
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return urls, nil
 }
+
 func (d *DBStorage) Get(shortURL string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

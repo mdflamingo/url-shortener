@@ -39,7 +39,6 @@ func setupRouter(t *testing.T, baseURL string, storage *repository.FileStorage) 
 func createTestStorage(t *testing.T) *repository.FileStorage {
 	t.Helper()
 
-	// Создаем временный файл для тестов
 	tmpFile, err := os.CreateTemp("", "test-storage-*.json")
 	require.NoError(t, err)
 	tmpFile.Close()
@@ -47,7 +46,6 @@ func createTestStorage(t *testing.T) *repository.FileStorage {
 	storage, err := repository.NewFileStorage(tmpFile.Name())
 	require.NoError(t, err)
 
-	// Удаляем временный файл после теста
 	t.Cleanup(func() {
 		os.Remove(tmpFile.Name())
 	})
@@ -134,7 +132,7 @@ func TestGetHandler(t *testing.T) {
 	storage := createTestStorage(t)
 	testShortURL := "abc123"
 	testOriginalURL := "https://example.com"
-	err := storage.Save(testShortURL, testOriginalURL)
+	_, err := storage.Save(testShortURL, testOriginalURL)
 	require.NoError(t, err)
 
 	tests := []struct {

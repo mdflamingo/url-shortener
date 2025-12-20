@@ -2,11 +2,14 @@ package repository
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"sync"
+
+	"github.com/mdflamingo/url-shortener/internal/service"
 )
 
 type FileStorage struct {
@@ -44,16 +47,16 @@ func NewFileStorage(filename string) (*FileStorage, error) {
 	return storage, nil
 }
 
-func (fs *FileStorage) Save(shortURL, originalURL string) error {
+func (fs *FileStorage) Save(shortURL, originalURL string) (string, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
 	exists, err := fs.checkExists(shortURL)
 	if err != nil {
-		return fmt.Errorf("failed to check URL existence: %w", err)
+		return "", fmt.Errorf("failed to check URL existence: %w", err)
 	}
 	if exists {
-		return fmt.Errorf("short URL already exists: %s", shortURL)
+		return "", fmt.Errorf("short URL already exists: %s", shortURL)
 	}
 
 	url := &URL{
@@ -62,10 +65,27 @@ func (fs *FileStorage) Save(shortURL, originalURL string) error {
 	}
 
 	if err := fs.producer.WriteURL(url); err != nil {
-		return fmt.Errorf("failed to write URL to file: %w", err)
+		return "", fmt.Errorf("failed to write URL to file: %w", err)
 	}
 
-	return nil
+	return url.ShortURL, nil
+}
+
+func (fs *FileStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
+	for i, url := range urls {
+		for {
+			_, err := fs.Save(url.ShortURL, url.OriginalURL)
+			if err != nil {
+				if fmt.Sprintf("%v", err) == fmt.Sprintf("short URL already exists: %s", url.ShortURL) {
+					urls[i].ShortURL = service.GenerateShortURLForBatch(url.OriginalURL)
+					continue
+				}
+				return nil, err
+			}
+			break
+		}
+	}
+	return urls, nil
 }
 
 func (fs *FileStorage) Get(shortURL string) (string, bool) {
@@ -195,5 +215,9 @@ func (c *Consumer) Close() error {
 	if c.file != nil {
 		return c.file.Close()
 	}
+	return nil
+}
+
+func (fs *FileStorage) Ping(ctx context.Context) error {
 	return nil
 }

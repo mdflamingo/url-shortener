@@ -2,23 +2,28 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/mdflamingo/url-shortener/internal/logger"
 	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/mdflamingo/url-shortener/internal/service"
+
 	"go.uber.org/zap"
 
 	"github.com/go-chi/chi/v5"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage *repository.FileStorage) {
+func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	if request.Header.Get("Content-Type") != "text/plain" {
 		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
 		http.Error(
@@ -36,7 +41,9 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		http.Error(response, "Failed to read request data", http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(string(body)) == "" {
+
+	originalURL := strings.TrimSpace(string(body))
+	if originalURL == "" {
 		logger.Log.Warn("empty URL provided")
 		http.Error(
 			response,
@@ -46,8 +53,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	_, err = url.Parse(string(body))
-
+	_, err = url.Parse(originalURL)
 	if err != nil {
 		logger.Log.Warn("invalid URL provided",
 			zap.Error(err))
@@ -55,18 +61,34 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	shortURL, err := GenerateShortURL(string(body), response, storage)
+	shortURL, err := GenerateAndSaveShortURL(originalURL, storage)
 
 	if err != nil {
+		if errors.Is(err, repository.ErrConflict) {
+			fullURL, joinErr := url.JoinPath(baseURL, shortURL)
+			if joinErr != nil {
+				logger.Log.Error("failed to join URL path",
+					zap.String("base_url", baseURL),
+					zap.String("short_url", shortURL),
+					zap.Error(joinErr))
+				http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+
+			response.Header().Set("Content-Type", "text/plain")
+			response.WriteHeader(http.StatusConflict)
+			response.Write([]byte(fullURL))
+			return
+		}
+
 		logger.Log.Error("Failed to generate short URL",
-			zap.String("original_url", string(body)),
+			zap.String("original_url", originalURL),
 			zap.Error(err))
 		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
 	fullURL, err := url.JoinPath(baseURL, shortURL)
-
 	if err != nil {
 		logger.Log.Error("failed to join URL path",
 			zap.String("base_url", baseURL),
@@ -75,11 +97,13 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
+
+	response.Header().Set("Content-Type", "text/plain")
 	response.WriteHeader(http.StatusCreated)
 	response.Write([]byte(fullURL))
 }
 
-func GetHandler(response http.ResponseWriter, request *http.Request, storage *repository.FileStorage) {
+func GetHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
 	id := chi.URLParam(request, "id")
 	origURL, ok := storage.Get(id)
 
@@ -92,11 +116,7 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage *re
 	}
 }
 
-func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage *repository.FileStorage) {
-	if request.Method != http.MethodPost {
-		http.Error(response, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
+func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 
 	if request.Header.Get("Content-Type") != "application/json" {
 		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
@@ -112,12 +132,12 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 	var buf bytes.Buffer
 
 	_, err := buf.ReadFrom(request.Body)
-
 	if err != nil {
 		logger.Log.Error("failed to read request body", zap.Error(err))
 		http.Error(response, err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	if err = json.Unmarshal(buf.Bytes(), &origURL); err != nil {
 		logger.Log.Error("Failed to unmarshal JSON",
 			zap.Error(err),
@@ -130,18 +150,47 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		http.Error(response, "URL cannot be empty", http.StatusBadRequest)
 		return
 	}
-	shortURL, err := GenerateShortURL(origURL.URL, response, storage)
+
+	shortURL, err := GenerateAndSaveShortURL(origURL.URL, storage)
+
+	if errors.Is(err, repository.ErrConflict) {
+		fullURL, joinErr := url.JoinPath(baseURL, shortURL)
+		if joinErr != nil {
+			logger.Log.Error("failed to join URL path",
+				zap.String("base_url", baseURL),
+				zap.String("short_url", shortURL),
+				zap.Error(joinErr))
+			http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		resp := models.Response{
+			Result: fullURL,
+		}
+		respJSON, marshalErr := json.Marshal(resp)
+		if marshalErr != nil {
+			logger.Log.Error("Failed to marshal response to JSON",
+				zap.Error(marshalErr),
+				zap.Any("response_object", resp))
+			http.Error(response, marshalErr.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusConflict)
+		response.Write(respJSON)
+		return
+	}
 
 	if err != nil {
-		logger.Log.Error("Failed to generate short URL",
-			zap.String("original_url", origURL.URL),
-			zap.Error(err))
-		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		logger.Log.Error("Failed to generate and save short URL",
+			zap.Error(err),
+			zap.String("original_url", origURL.URL))
+		http.Error(response, "Failed to create short URL: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	fullURL, err := url.JoinPath(baseURL, shortURL)
-
 	if err != nil {
 		logger.Log.Error("failed to join URL path",
 			zap.String("base_url", baseURL),
@@ -155,9 +204,10 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		Result: fullURL,
 	}
 	respJSON, err := json.Marshal(resp)
-
 	if err != nil {
-		logger.Log.Error("Failed to marshal response to JSON", zap.Error(err), zap.Any("response_object", resp))
+		logger.Log.Error("Failed to marshal response to JSON",
+			zap.Error(err),
+			zap.Any("response_object", resp))
 		http.Error(response, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -167,26 +217,121 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 	response.Write(respJSON)
 }
 
-func GenerateShortURL(origURL string, response http.ResponseWriter, storage *repository.FileStorage) (string, error) {
-	var maxAttempts = 10
-	var shortURL string
+func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
+	var batches []models.BatchRequest
+	var buf bytes.Buffer
 
-	for attempts := range maxAttempts {
-		shortURL = service.GenerateShortURL(6)
-		err := storage.Save(shortURL, string(origURL))
-		if err == nil {
-			return shortURL, nil
-		}
-
-		logger.Log.Warn("ID collision detected",
-			zap.String("short_url", shortURL),
-			zap.Int("attempt", attempts+1),
-			zap.Error(err))
-
-		if attempts == maxAttempts-1 {
-			return "", fmt.Errorf("failed to generate unique short URL after %d attempts: %w", maxAttempts, err)
-		}
+	_, err := buf.ReadFrom(request.Body)
+	if err != nil {
+		logger.Log.Error("failed to read request body", zap.Error(err))
+		http.Error(response, err.Error(), http.StatusBadRequest)
+		return
 	}
-	return "", fmt.Errorf("unknown error")
 
+	if err = json.Unmarshal(buf.Bytes(), &batches); err != nil {
+		logger.Log.Error("Failed to unmarshal JSON",
+			zap.Error(err),
+			zap.String("request_body", buf.String()))
+		http.Error(response, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	urlPairs := make([]repository.URLPair, 0, len(batches))
+
+	for _, row := range batches {
+		if row.OriginalURL == "" {
+			http.Error(response, "URL cannot be empty", http.StatusBadRequest)
+			return
+		}
+
+		if _, err := url.ParseRequestURI(row.OriginalURL); err != nil {
+			logger.Log.Warn("invalid URL",
+				zap.String("url", row.OriginalURL),
+				zap.Error(err))
+			http.Error(response, "Invalid URL format", http.StatusBadRequest)
+			return
+		}
+
+		shortURL := service.GenerateShortURLForBatch(row.OriginalURL)
+		urlPairs = append(urlPairs, repository.URLPair{
+			ShortURL:    shortURL,
+			OriginalURL: row.OriginalURL,
+		})
+	}
+
+	updatedPairs, err := storage.SaveMany(urlPairs)
+	if err != nil {
+		logger.Log.Error("Failed to save URLs in batch", zap.Error(err))
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	responses := make([]models.BatchResponse, 0, len(updatedPairs))
+	for i, pair := range updatedPairs {
+		fullURL, err := url.JoinPath(baseURL, pair.ShortURL)
+		if err != nil {
+			logger.Log.Error("failed to join URL path",
+				zap.String("base_url", baseURL),
+				zap.String("short_url", pair.ShortURL),
+				zap.Error(err))
+			http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		responses = append(responses, models.BatchResponse{
+			CorrelationID: batches[i].CorrelationID,
+			ShortURL:      fullURL,
+		})
+	}
+
+	respJSON, err := json.Marshal(responses)
+	if err != nil {
+		logger.Log.Error("Failed to marshal response to JSON", zap.Error(err))
+		http.Error(response, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(http.StatusCreated)
+	response.Write(respJSON)
+}
+
+func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage) (string, error) {
+	var maxAttempts = 10
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		shortURL := service.GenerateShortURL(6)
+		savedShortURL, err := storage.Save(shortURL, originalURL)
+
+		if err == nil {
+			return savedShortURL, nil
+		}
+
+		if errors.Is(err, repository.ErrConflict) {
+			if savedShortURL != "" {
+				return savedShortURL, err
+			}
+			continue
+		}
+
+	}
+
+	return "", fmt.Errorf("failed to generate unique short URL after %d attempts", maxAttempts)
+}
+
+func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
+	logger.Log.Info("HealthCheck called", zap.String("method", request.Method))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	if err := storage.Ping(ctx); err != nil {
+		logger.Log.Error("storage not available", zap.Error(err))
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Log.Info("HealthCheck completed successfully")
+	response.WriteHeader(http.StatusOK)
+	response.Write([]byte("OK"))
 }

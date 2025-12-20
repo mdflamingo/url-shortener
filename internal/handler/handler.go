@@ -262,7 +262,7 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 	updatedPairs, err := storage.SaveMany(urlPairs)
 	if err != nil {
 		logger.Log.Error("Failed to save URLs in batch", zap.Error(err))
-		http.Error(response, "Failed to save URLs: "+err.Error(), http.StatusInternalServerError)
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 

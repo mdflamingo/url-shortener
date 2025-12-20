@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -13,7 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/mdflamingo/url-shortener/internal/service"
 )
 
 type URLPair struct {
@@ -90,34 +90,69 @@ func (d *DBStorage) Save(shortURL, originalURL string) (string, error) {
 }
 
 func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
-	if len(urls) == 0 {
-		return urls, nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	for i, url := range urls {
-		for {
-			var returnedShortURL string
-			err := d.pool.QueryRow(ctx,
-				`INSERT INTO urls (short_url, full_url)
-                 VALUES ($1, $2)
-                 ON CONFLICT (full_url)
-                 DO UPDATE SET short_url = urls.short_url  -- Обновляем на тот же (ничего не меняем)
-                 RETURNING short_url`,
-				url.ShortURL, url.OriginalURL).Scan(&returnedShortURL)
-			if err != nil {
-				var pgErr *pgconn.PgError
-				if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-					urls[i].ShortURL = service.GenerateShortURLForBatch(url.OriginalURL)
-					continue
-				}
-				return nil, fmt.Errorf("failed to insert URL: %w", err)
-			}
-			urls[i].ShortURL = returnedShortURL
-			break
-		}
-	}
-	return urls, nil
+    if len(urls) == 0 {
+        return urls, nil
+    }
+
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+
+    tx, err := d.pool.Begin(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to begin transaction: %w", err)
+    }
+    defer tx.Rollback(ctx)
+
+    batch := &pgx.Batch{}
+
+    for _, url := range urls {
+        batch.Queue(
+            `INSERT INTO urls (short_url, full_url)
+             VALUES ($1, $2)
+             ON CONFLICT (full_url)
+             DO UPDATE SET short_url = EXCLUDED.short_url
+             RETURNING short_url`,
+            url.ShortURL, url.OriginalURL,
+        )
+    }
+
+    br := tx.SendBatch(ctx, batch)
+
+    results := make([]string, len(urls))
+
+    for i := 0; i < len(urls); i++ {
+        err := br.QueryRow().Scan(&results[i])
+        if err != nil {
+            var pgErr *pgconn.PgError
+            if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+                var existingShortURL string
+                if queryErr := tx.QueryRow(ctx,
+                    `SELECT short_url FROM urls WHERE full_url = $1`,
+                    urls[i].OriginalURL).Scan(&existingShortURL); queryErr != nil {
+                    br.Close()
+                    return nil, fmt.Errorf("failed to get existing URL for %s: %w", urls[i].OriginalURL, queryErr)
+                }
+
+                urls[i].ShortURL = existingShortURL
+                results[i] = existingShortURL
+            } else {
+                br.Close()
+                return nil, fmt.Errorf("failed to insert URL at index %d: %w", i, err)
+            }
+        } else {
+            urls[i].ShortURL = results[i]
+        }
+    }
+
+    if err := br.Close(); err != nil {
+        return nil, fmt.Errorf("failed to close batch: %w", err)
+    }
+
+    if err := tx.Commit(ctx); err != nil {
+        return nil, fmt.Errorf("failed to commit transaction: %w", err)
+    }
+
+    return urls, nil
 }
 
 func (d *DBStorage) Get(shortURL string) (string, bool) {

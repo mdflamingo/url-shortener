@@ -1,4 +1,3 @@
-ALTER TABLE urls ADD COLUMN user_id INTEGER;
-ALTER TABLE urls ALTER COLUMN user_id SET NOT NULL;
+ALTER TABLE urls ADD COLUMN IF NOT EXISTS user_id INTEGER;
 
-CREATE INDEX idx_urls_user ON urls(users_id);
+CREATE INDEX IF NOT EXISTS idx_urls_user ON urls(user_id);

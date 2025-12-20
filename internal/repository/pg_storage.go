@@ -91,55 +91,70 @@ func (d *DBStorage) Save(shortURL, originalURL string) (string, error) {
 }
 
 func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
-	if len(urls) == 0 {
-		return urls, nil
-	}
+    if len(urls) == 0 {
+        return urls, nil
+    }
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
 
-	tx, err := d.pool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx)
+    tx, err := d.pool.Begin(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to begin transaction: %w", err)
+    }
+    defer tx.Rollback(ctx)
 
-	batch := &pgx.Batch{}
+    batch := &pgx.Batch{}
 
-	results := make([]string, len(urls))
-
-	for i, url := range urls {
-		batch.Queue(
-			`INSERT INTO urls (short_url, full_url)
+    for _, url := range urls {
+        batch.Queue(
+            `INSERT INTO urls (short_url, full_url)
              VALUES ($1, $2)
              ON CONFLICT (full_url)
              DO UPDATE SET short_url = EXCLUDED.short_url
              RETURNING short_url`,
-			url.ShortURL, url.OriginalURL,
-		).Scan(&results[i])
-	}
+            url.ShortURL, url.OriginalURL,
+        )
+    }
 
-	br := tx.SendBatch(ctx, batch)
-	defer br.Close()
+    br := tx.SendBatch(ctx, batch)
+    defer br.Close()
 
-	for i := 0; i < len(urls); i++ {
-		if err := br.QueryRow().Scan(&results[i]); err != nil {
-			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-				urls[i].ShortURL = service.GenerateShortURLForBatch(urls[i].OriginalURL)
-			} else {
-				return nil, fmt.Errorf("failed to insert URL: %w", err)
-			}
-		} else {
-			urls[i].ShortURL = results[i]
-		}
-	}
+    for i := 0; i < len(urls); i++ {
+        var returnedShortURL string
+        err := br.QueryRow().Scan(&returnedShortURL)
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
-	}
+        if err != nil {
+            var pgErr *pgconn.PgError
+            if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+                newShortURL := service.GenerateShortURLForBatch(urls[i].OriginalURL)
 
-	return urls, nil
+                err = tx.QueryRow(ctx,
+                    `INSERT INTO urls (short_url, full_url)
+                     VALUES ($1, $2)
+                     ON CONFLICT (full_url)
+                     DO UPDATE SET short_url = EXCLUDED.short_url
+                     RETURNING short_url`,
+                    newShortURL, urls[i].OriginalURL).Scan(&returnedShortURL)
+
+                if err != nil {
+                    return nil, fmt.Errorf("failed to insert URL after conflict: %w", err)
+                }
+
+                urls[i].ShortURL = returnedShortURL
+                continue
+            }
+            return nil, fmt.Errorf("failed to insert URL: %w", err)
+        }
+
+        urls[i].ShortURL = returnedShortURL
+    }
+
+    if err := tx.Commit(ctx); err != nil {
+        return nil, fmt.Errorf("failed to commit transaction: %w", err)
+    }
+
+    return urls, nil
 }
 
 func (d *DBStorage) Get(shortURL string) (string, bool) {

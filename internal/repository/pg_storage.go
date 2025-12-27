@@ -161,7 +161,7 @@ func (d *DBStorage) Get(shortURL string) (string, bool) {
 
 	var originalURL string
 	err := d.pool.QueryRow(ctx,
-		"SELECT full_url FROM urls WHERE short_url = $1",
+		"SELECT full_url FROM urls WHERE short_url = $1 AND is_deleted = False",
 		shortURL).Scan(&originalURL)
 
 	if err != nil {
@@ -174,7 +174,22 @@ func (d *DBStorage) Get(shortURL string) (string, bool) {
 	return originalURL, true
 }
 
-func (d *DBStorage) GetByUserID(userID string) ([]URLPair, error) {
+
+func (d *DBStorage) Delete(shortURL []string, user_id int) (error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err := d.pool.QueryRow(ctx,
+		"UPDATE urls SET is_deleted = true WHERE short_url IN $1 AND user_id = $2",
+		shortURL, user_id)
+
+	if err != nil {
+			return fmt.Errorf("failed to update urls: %w", err)
+		}
+
+}
+
+func (d *DBStorage) GetByUserID(userID int) ([]URLPair, error) {
     ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
     defer cancel()
 

@@ -13,7 +13,8 @@ type URLStorage interface {
 	Save(shortURL, originalURL string) (string, error)
 	SaveMany(urls []URLPair) ([]URLPair, error)
 	Get(shortURL string) (string, bool)
-	GetByUserID(userID string) ([]URLPair, error)
+	GetByUserID(userID int) ([]URLPair, error)
+	Delete(shortURL []string, user_id int) (error)
 	Close() error
 	Ping(ctx context.Context) error
 }

@@ -44,8 +44,12 @@ func (s *MemoryStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	return urls, nil
 }
 
-func (s *MemoryStorage) GetByUserID(urls []URLPair) ([]URLPair, error) {
+func (s *MemoryStorage) GetByUserID(user_id int) ([]URLPair, error) {
 	return []URLPair{}, nil
+}
+
+func (s * MemoryStorage) Delete(shortURL []string, user_id int) (error) {
+	return nil
 }
 
 func (s *MemoryStorage) Get(shortURL string) (string, bool) {

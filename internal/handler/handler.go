@@ -112,7 +112,7 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage rep
 	} else {
 		logger.Log.Warn("short URL not found",
 			zap.String("short_id", id))
-		http.Error(response, "URL not found", http.StatusNotFound)
+		http.Error(response, "URL not found", http.StatusGone)
 	}
 }
 

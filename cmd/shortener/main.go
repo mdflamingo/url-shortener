@@ -1,13 +1,14 @@
 package main
 
 import (
+	"log"
+	"net/http"
+
 	"github.com/mdflamingo/url-shortener/internal/config"
 	"github.com/mdflamingo/url-shortener/internal/handler"
 	"github.com/mdflamingo/url-shortener/internal/logger"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"go.uber.org/zap"
-	"log"
-	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"

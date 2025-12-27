@@ -88,8 +88,12 @@ func (fs *FileStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	return urls, nil
 }
 
-func (fs *FileStorage) GetByUserID(urls []URLPair) ([]URLPair, error) {
+func (fs *FileStorage) GetByUserID(user_id int) ([]URLPair, error) {
 	return []URLPair{}, nil
+}
+
+func (fs *FileStorage) Delete(shortURL []string, user_id int) (error) {
+	return nil
 }
 
 func (fs *FileStorage) Get(shortURL string) (string, bool) {

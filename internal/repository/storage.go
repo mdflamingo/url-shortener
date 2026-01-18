@@ -10,7 +10,7 @@ var ErrNotFound = errors.New("URL not found")
 var ErrShortURLConflict = errors.New("short URL conflict")
 
 type URLStorage interface {
-	Save(shortURL, originalURL, userID string) (string, error)
+	Save(shortURL, originalURL string) (string, error)
 	SaveMany(urls []URLPair) ([]URLPair, error)
 	Get(shortURL string) (string, bool)
 	GetByUserID(userID string) ([]URLPair, error)

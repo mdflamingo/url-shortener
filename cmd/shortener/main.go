@@ -62,6 +62,9 @@ func run(conf *config.Config) error {
 	r.Get("/api/user/urls", func(w http.ResponseWriter, req *http.Request) {
 		handler.UserURLSHandler(w, req, conf.BaseShortURL, storage)
 	})
+	r.Post("/api/user/urls", func(w http.ResponseWriter, req *http.Request) {
+		handler.UserURLSHandler(w, req, conf.BaseShortURL, storage)
+	})
 
 	return http.ListenAndServe(conf.RunAddr, r)
 }

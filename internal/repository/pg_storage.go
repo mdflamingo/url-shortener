@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -175,21 +176,26 @@ func (d *DBStorage) Get(shortURL string) (string, bool) {
 }
 
 
-func (d *DBStorage) Delete(shortURL []string, user_id int) (error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+func (d *DBStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) chan error {
+    resultChs := d.fanOut(doneCh, inputCh, userID)
+    finalCh := d.fanIn(doneCh, resultChs...)
 
-	err := d.pool.QueryRow(ctx,
-		"UPDATE urls SET is_deleted = true WHERE short_url IN $1 AND user_id = $2",
-		shortURL, user_id)
-
-	if err != nil {
-			return fmt.Errorf("failed to update urls: %w", err)
-		}
-
+    return finalCh
 }
 
-func (d *DBStorage) GetByUserID(userID int) ([]URLPair, error) {
+func (d *DBStorage) processBatch(ctx context.Context, batch []string, userID string) error {
+    query := `UPDATE urls SET is_deleted = true
+              WHERE short_url = ANY($1) AND user_id = $2 AND is_deleted = false`
+
+    _, err := d.pool.Exec(ctx, query, batch, userID)
+    if err != nil {
+        fmt.Printf("Error deleting batch: %v\n", err)
+    }
+    return err
+}
+
+
+func (d *DBStorage) GetByUserID(userID string) ([]URLPair, error) {
     ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
     defer cancel()
 

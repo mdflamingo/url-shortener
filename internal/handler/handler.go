@@ -388,3 +388,65 @@ func UserURLSHandler(response http.ResponseWriter, request *http.Request, baseUR
     response.Write(respJSON)
 }
 
+func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
+    userID := request.Context().Value("user_id")
+    if userID == nil {
+        response.Header().Set("Content-Type", "application/json")
+        response.WriteHeader(http.StatusUnauthorized)
+        return
+    }
+
+	var urls []string
+	var buf bytes.Buffer
+
+	_, err := buf.ReadFrom(request.Body)
+	if err != nil {
+		logger.Log.Error("failed to read request body", zap.Error(err))
+		http.Error(response, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err = json.Unmarshal(buf.Bytes(), &urls); err != nil {
+		logger.Log.Error("Failed to unmarshal JSON",
+			zap.Error(err),
+			zap.String("request_body", buf.String()))
+		http.Error(response, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if len(urls) == 0 {
+        response.Header().Set("Content-Type", "application/json")
+        response.WriteHeader(http.StatusBadRequest)
+        return
+    }
+
+	inputCh := make(chan string, len(urls))
+    doneCh := make(chan struct{})
+
+	go func()  {
+		defer close(inputCh)
+		for _, url := range urls {
+			select {
+			case <- doneCh:
+				return
+			case inputCh <- url:
+			}
+		}
+	}()
+
+	resultCh := storage.Delete(doneCh, inputCh, userID.(string))
+
+	go func() {
+        for err := range resultCh {
+            if err != nil {
+                logger.Log.Error("Failed to delete URL batch", zap.Error(err))
+            } else {
+                logger.Log.Info("URL batch deleted successfully")
+            }
+        }
+    }()
+
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(http.StatusAccepted)
+}
+

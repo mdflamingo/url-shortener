@@ -33,12 +33,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		)
 		return
 	}
-	userID := request.Context().Value(UserIDKey)
-	if userID == nil {
-		response.Header().Set("Content-Type", "application/json")
-		response.WriteHeader(http.StatusUnauthorized)
-		return
-	}
+
 	body, err := io.ReadAll(request.Body)
 
 	if err != nil {
@@ -66,7 +61,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID.(string))
+	shortURL, err := GenerateAndSaveShortURL(originalURL, storage)
 
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {
@@ -131,12 +126,6 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		)
 		return
 	}
-	userID := request.Context().Value(UserIDKey)
-	if userID == nil {
-		response.Header().Set("Content-Type", "application/json")
-		response.WriteHeader(http.StatusUnauthorized)
-		return
-	}
 
 	var origURL models.Request
 	var buf bytes.Buffer
@@ -161,7 +150,7 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		return
 	}
 
-	shortURL, err := GenerateAndSaveShortURL(origURL.URL, storage, userID.(string))
+	shortURL, err := GenerateAndSaveShortURL(origURL.URL, storage)
 
 	if errors.Is(err, repository.ErrConflict) {
 		fullURL, joinErr := url.JoinPath(baseURL, shortURL)
@@ -228,13 +217,6 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 }
 
 func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-	userID := request.Context().Value(UserIDKey)
-	if userID == nil {
-		response.Header().Set("Content-Type", "application/json")
-		response.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-
 	var batches []models.BatchRequest
 	var buf bytes.Buffer
 
@@ -313,12 +295,12 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 	response.Write(respJSON)
 }
 
-func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, userID string) (string, error) {
+func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage) (string, error) {
 	var maxAttempts = 10
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shortURL := service.GenerateShortURL(6)
-		savedShortURL, err := storage.Save(shortURL, originalURL, userID)
+		savedShortURL, err := storage.Save(shortURL, originalURL)
 
 		if err == nil {
 			return savedShortURL, nil
@@ -407,7 +389,6 @@ func UserURLSHandler(response http.ResponseWriter, request *http.Request, baseUR
 
 func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	userID := request.Context().Value(UserIDKey)
-	fmt.Println(userID)
 	if userID == nil {
 		response.Header().Set("Content-Type", "application/json")
 		response.WriteHeader(http.StatusUnauthorized)

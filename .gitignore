@@ -24,6 +24,7 @@ vendor/
 urls.csv
 test_urls.csv
 shortenertest_v2-darwin-arm64
+shortener
 .env
 docker-compose.yaml
 test.go

@@ -34,6 +34,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
+	userID := request.Context().Value(UserIDKey)
 	body, err := io.ReadAll(request.Body)
 
 	if err != nil {
@@ -61,7 +62,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	shortURL, err := GenerateAndSaveShortURL(originalURL, storage)
+	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID.(string))
 
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {
@@ -130,6 +131,8 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 	var origURL models.Request
 	var buf bytes.Buffer
 
+	userID := request.Context().Value(UserIDKey)
+
 	_, err := buf.ReadFrom(request.Body)
 	if err != nil {
 		logger.Log.Error("failed to read request body", zap.Error(err))
@@ -150,7 +153,7 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		return
 	}
 
-	shortURL, err := GenerateAndSaveShortURL(origURL.URL, storage)
+	shortURL, err := GenerateAndSaveShortURL(origURL.URL, storage, userID.(string))
 
 	if errors.Is(err, repository.ErrConflict) {
 		fullURL, joinErr := url.JoinPath(baseURL, shortURL)
@@ -220,6 +223,8 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 	var batches []models.BatchRequest
 	var buf bytes.Buffer
 
+	userID := request.Context().Value(UserIDKey)
+
 	_, err := buf.ReadFrom(request.Body)
 	if err != nil {
 		logger.Log.Error("failed to read request body", zap.Error(err))
@@ -255,6 +260,7 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 		urlPairs = append(urlPairs, repository.URLPair{
 			ShortURL:    shortURL,
 			OriginalURL: row.OriginalURL,
+			UserID: userID.(string),
 		})
 	}
 
@@ -295,12 +301,12 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 	response.Write(respJSON)
 }
 
-func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage) (string, error) {
+func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, userID string) (string, error) {
 	var maxAttempts = 10
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shortURL := service.GenerateShortURL(6)
-		savedShortURL, err := storage.Save(shortURL, originalURL)
+		savedShortURL, err := storage.Save(shortURL, originalURL, userID)
 
 		if err == nil {
 			return savedShortURL, nil

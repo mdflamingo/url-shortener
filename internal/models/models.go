@@ -18,6 +18,6 @@ type BatchResponse struct {
 }
 
 type ResponseByUser struct {
-	OriginalURL string `json:"original_id"`
+	OriginalURL string `json:"original_url"`
 	ShortURL    string `json:"short_url"`
 }

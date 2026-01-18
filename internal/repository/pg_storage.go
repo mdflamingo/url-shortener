@@ -20,6 +20,7 @@ import (
 type URLPair struct {
 	ShortURL    string
 	OriginalURL string
+	UserID string
 }
 
 type DBStorage struct {
@@ -61,19 +62,19 @@ func NewDBStorage(dsn string) (*DBStorage, error) {
 	return &DBStorage{pool: pool}, nil
 }
 
-func (d *DBStorage) Save(shortURL, originalURL string) (string, error) {
+func (d *DBStorage) Save(shortURL, originalURL, userID string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	var returnedShortURL string
 
 	err := d.pool.QueryRow(ctx,
-		`INSERT INTO urls (short_url, full_url)
-         VALUES ($1, $2)
+		`INSERT INTO urls (short_url, full_url, user_id)
+         VALUES ($1, $2, $3)
          ON CONFLICT (full_url)
          DO UPDATE SET full_url = EXCLUDED.full_url
          RETURNING short_url`,
-		shortURL, originalURL).Scan(&returnedShortURL)
+		shortURL, originalURL, userID).Scan(&returnedShortURL)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -107,13 +108,21 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	batch := &pgx.Batch{}
 
 	for _, url := range urls {
+		// batch.Queue(
+		// 	`INSERT INTO urls (short_url, full_url, user_id)
+        //      VALUES ($1, $2, $3)
+        //      ON CONFLICT (full_url)
+        //      DO UPDATE SET short_url = EXCLUDED.short_url
+        //      RETURNING short_url`,
+		// 	url.ShortURL, url.OriginalURL, url.UserID,
+		// )
 		batch.Queue(
-			`INSERT INTO urls (short_url, full_url)
-             VALUES ($1, $2)
+			`INSERT INTO urls (short_url, full_url, user_id)
+             VALUES ($1, $2, $3)
              ON CONFLICT (full_url)
-             DO UPDATE SET short_url = EXCLUDED.short_url
+             DO NOTHING
              RETURNING short_url`,
-			url.ShortURL, url.OriginalURL,
+			url.ShortURL, url.OriginalURL, url.UserID,
 		)
 	}
 

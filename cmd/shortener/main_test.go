@@ -26,7 +26,7 @@ func setupRouter(t *testing.T, baseURL string, storage *repository.FileStorage) 
 	r := chi.NewRouter()
 	cookieSecret := "test-secret-key"
 	cookieMiddleware := NewSignedCookieMiddleware(cookieSecret)
-
+	r.Use(gzipMiddleware)
 	r.Use(cookieMiddleware.CookieMiddleware)
 
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
@@ -329,17 +329,12 @@ func TestGzipCompression(t *testing.T) {
 	storage := createTestStorage(t)
 	baseURL := "http://localhost:8080"
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.JSONPostHandler(w, r, baseURL, storage)
-	})
+	router := setupRouter(t, baseURL, storage)
 
-	handlerWithMiddleware := gzipMiddleware(handler)
-
-	srv := httptest.NewServer(handlerWithMiddleware)
+	srv := httptest.NewServer(router)
 	defer srv.Close()
 
 	requestBody := `{"url": "https://example.com"}`
-
 	t.Run("sends_gzip_request", func(t *testing.T) {
 		buf := bytes.NewBuffer(nil)
 		zb := gzip.NewWriter(buf)

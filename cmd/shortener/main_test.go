@@ -24,6 +24,11 @@ const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 func setupRouter(t *testing.T, baseURL string, storage *repository.FileStorage) http.Handler {
 	t.Helper()
 	r := chi.NewRouter()
+	cookieSecret := "test-secret-key"
+	cookieMiddleware := NewSignedCookieMiddleware(cookieSecret)
+
+	r.Use(cookieMiddleware.CookieMiddleware)
+
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
 		handler.GetHandler(w, req, storage)
 	})

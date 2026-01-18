@@ -132,8 +132,7 @@ func TestGetHandler(t *testing.T) {
 	storage := createTestStorage(t)
 	testShortURL := "abc123"
 	testOriginalURL := "https://example.com"
-	testUserID := "abc-abc"
-	_, err := storage.Save(testShortURL, testOriginalURL, testUserID)
+	_, err := storage.Save(testShortURL, testOriginalURL)
 	require.NoError(t, err)
 
 	tests := []struct {

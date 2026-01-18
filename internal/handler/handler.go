@@ -336,7 +336,7 @@ func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage 
 }
 
 func UserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-    userID := request.Context().Value("user_id")
+	userID := request.Context().Value(UserIDKey)
 
 	urls, err := storage.GetByUserID(userID.(string))
 	if err != nil {

@@ -59,11 +59,8 @@ func run(conf *config.Config) error {
 	r.Post("/api/shorten/batch", func(w http.ResponseWriter, req *http.Request) {
 		handler.BatchHandler(w, req, conf.BaseShortURL, storage)
 	})
-	r.Get("/api/user/urls", func(w http.ResponseWriter, req *http.Request) {
-		handler.UserURLSHandler(w, req, conf.BaseShortURL, storage)
-	})
-	r.Post("/api/user/urls", func(w http.ResponseWriter, req *http.Request) {
-		handler.UserURLSHandler(w, req, conf.BaseShortURL, storage)
+	r.Delete("/api/user/urls", func(w http.ResponseWriter, req *http.Request) {
+		handler.DeleteUserURLSHandler(w, req, conf.BaseShortURL, storage)
 	})
 
 	return http.ListenAndServe(conf.RunAddr, r)

@@ -11,11 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mdflamingo/url-shortener/internal/handler"
 )
-
-type contextKey string
-
-const UserIDKey contextKey = "user_id"
 
 type SignedCookieMiddleware struct {
 	secretKey []byte
@@ -36,31 +33,36 @@ func (m *SignedCookieMiddleware) CookieMiddleware(next http.Handler) http.Handle
 
 		cookie, err := r.Cookie(cookieName)
 		var userID string
+		var shouldSetCookie bool
 
 		if err == nil && cookie != nil {
 			if id, valid := m.validateSignedCookie(cookie.Value); valid {
 				userID = id
+				shouldSetCookie = true
 			} else {
 				userID = uuid.New().String()
+				shouldSetCookie = true
 			}
 		} else {
 			userID = uuid.New().String()
+			shouldSetCookie = true
 		}
 
-		signedCookie := m.createSignedCookie(userID)
+		if shouldSetCookie {
+			signedCookie := m.createSignedCookie(userID)
+			http.SetCookie(w, &http.Cookie{
+				Name:     cookieName,
+				Value:    signedCookie,
+				HttpOnly: true,
+				Secure:   false,
+				SameSite: http.SameSiteLaxMode,
+				MaxAge:   30 * 24 * 3600,
+				Path:     "/",
+				Expires:  time.Now().Add(30 * 24 * time.Hour),
+			})
+		}
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     cookieName,
-			Value:    signedCookie,
-			HttpOnly: true,
-			Secure:   false,
-			SameSite: http.SameSiteLaxMode,
-			MaxAge:   30 * 24 * 3600,
-			Path:     "/",
-			Expires:  time.Now().Add(30 * 24 * time.Hour),
-		})
-
-		ctx := context.WithValue(r.Context(), UserIDKey, userID)
+		ctx := context.WithValue(r.Context(), handler.UserIDKey, userID)
 		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
@@ -114,6 +116,6 @@ func (m *SignedCookieMiddleware) validateSignedCookie(cookieValue string) (strin
 }
 
 func GetUserIDFromContext(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(UserIDKey).(string)
+	userID, ok := ctx.Value(handler.UserIDKey).(string)
 	return userID, ok
 }

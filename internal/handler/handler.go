@@ -336,65 +336,15 @@ func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage 
 	response.Write([]byte("OK"))
 }
 
-func UserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-    userID := request.Context().Value("user_id")
-    if userID == nil {
-        response.Header().Set("Content-Type", "application/json")
-        response.WriteHeader(http.StatusUnauthorized)
-        return
-    }
-
-    urls, err := storage.GetByUserID(userID.(string))
-    if err != nil {
-        logger.Log.Error("Failed to get URLs from storage",
-            zap.Error(err))
-        http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-        return
-    }
-
-    if len(urls) == 0 {
-        response.Header().Set("Content-Type", "application/json")
-        response.WriteHeader(http.StatusNoContent)
-        return
-    }
-
-    responses := make([]models.ResponseByUser, 0, len(urls))
-    for _, pair := range urls {
-        fullURL, err := url.JoinPath(baseURL, pair.ShortURL)
-        if err != nil {
-            logger.Log.Error("Failed to join URL path",
-                zap.String("base_url", baseURL),
-                zap.String("short_url", pair.ShortURL),
-                zap.Error(err))
-            http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-            return
-        }
-
-        responses = append(responses, models.ResponseByUser{
-            OriginalURL: pair.OriginalURL,
-            ShortURL:    fullURL,
-        })
-    }
-
-    respJSON, err := json.Marshal(responses)
-    if err != nil {
-        logger.Log.Error("Failed to marshal response to JSON", zap.Error(err))
-        http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-        return
-    }
-
-    response.Header().Set("Content-Type", "application/json")
-    response.WriteHeader(http.StatusOK)
-    response.Write(respJSON)
-}
-
 func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-    userID := request.Context().Value("user_id")
-    if userID == nil {
-        response.Header().Set("Content-Type", "application/json")
-        response.WriteHeader(http.StatusUnauthorized)
-        return
-    }
+	logger.Log.Info("DeleteUserURLSHandler called")
+	userID := request.Context().Value(UserIDKey)
+	fmt.Println(userID)
+	if userID == nil {
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 
 	var urls []string
 	var buf bytes.Buffer
@@ -415,19 +365,19 @@ func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, 
 	}
 
 	if len(urls) == 0 {
-        response.Header().Set("Content-Type", "application/json")
-        response.WriteHeader(http.StatusBadRequest)
-        return
-    }
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	inputCh := make(chan string, len(urls))
-    doneCh := make(chan struct{})
+	doneCh := make(chan struct{})
 
-	go func()  {
+	go func() {
 		defer close(inputCh)
 		for _, url := range urls {
 			select {
-			case <- doneCh:
+			case <-doneCh:
 				return
 			case inputCh <- url:
 			}
@@ -437,16 +387,15 @@ func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, 
 	resultCh := storage.Delete(doneCh, inputCh, userID.(string))
 
 	go func() {
-        for err := range resultCh {
-            if err != nil {
-                logger.Log.Error("Failed to delete URL batch", zap.Error(err))
-            } else {
-                logger.Log.Info("URL batch deleted successfully")
-            }
-        }
-    }()
+		for err := range resultCh {
+			if err != nil {
+				logger.Log.Error("Failed to delete URL batch", zap.Error(err))
+			} else {
+				logger.Log.Info("URL batch deleted successfully")
+			}
+		}
+	}()
 
 	response.Header().Set("Content-Type", "application/json")
 	response.WriteHeader(http.StatusAccepted)
 }
-

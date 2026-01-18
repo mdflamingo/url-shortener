@@ -48,7 +48,7 @@ func (s *MemoryStorage) GetByUserID(userID string) ([]URLPair, error) {
 	return []URLPair{}, nil
 }
 
-func (s * MemoryStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) (chan error) {
+func (s *MemoryStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) chan error {
 	return nil
 }
 

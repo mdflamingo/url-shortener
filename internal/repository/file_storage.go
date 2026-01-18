@@ -92,7 +92,7 @@ func (fs *FileStorage) GetByUserID(userID string) ([]URLPair, error) {
 	return []URLPair{}, nil
 }
 
-func (fs *FileStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) (chan error) {
+func (fs *FileStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) chan error {
 	return nil
 }
 

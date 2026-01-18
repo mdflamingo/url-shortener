@@ -337,11 +337,6 @@ func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage 
 
 func UserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
     userID := request.Context().Value("user_id")
-	if userID == nil {
-		response.Header().Set("Content-Type", "application/json")
-		response.WriteHeader(http.StatusUnauthorized)
-		return
-	}
 
 	urls, err := storage.GetByUserID(userID.(string))
 	if err != nil {
@@ -389,11 +384,6 @@ func UserURLSHandler(response http.ResponseWriter, request *http.Request, baseUR
 
 func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	userID := request.Context().Value(UserIDKey)
-	if userID == nil {
-		response.Header().Set("Content-Type", "application/json")
-		response.WriteHeader(http.StatusUnauthorized)
-		return
-	}
 
 	var urls []string
 	var buf bytes.Buffer

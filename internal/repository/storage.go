@@ -14,7 +14,7 @@ type URLStorage interface {
 	SaveMany(urls []URLPair) ([]URLPair, error)
 	Get(shortURL string) (string, bool)
 	GetByUserID(userID string) ([]URLPair, error)
-	Delete(doneCh chan struct{}, inputCh chan string, user_id string) (chan error)
+	Delete(doneCh chan struct{}, inputCh chan string, userID string) (chan error)
 	Close() error
 	Ping(ctx context.Context) error
 }

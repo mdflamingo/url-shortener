@@ -6,11 +6,16 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+type contextKey string
+
+const UserIDKey contextKey = "user_id"
 
 type SignedCookieMiddleware struct {
 	secretKey []byte
@@ -55,7 +60,7 @@ func (m *SignedCookieMiddleware) CookieMiddleware(next http.Handler) http.Handle
 			Expires:  time.Now().Add(30 * 24 * time.Hour),
 		})
 
-		ctx := context.WithValue(r.Context(), "user_id", userID)
+		ctx := context.WithValue(r.Context(), UserIDKey, userID)
 		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
@@ -64,7 +69,7 @@ func (m *SignedCookieMiddleware) CookieMiddleware(next http.Handler) http.Handle
 
 func (m *SignedCookieMiddleware) createSignedCookie(userID string) string {
 	timestamp := time.Now().Unix()
-	data := userID + "|" + string(timestamp)
+	data := userID + "|" + strconv.FormatInt(timestamp, 10)
 
 	h := hmac.New(sha256.New, m.secretKey)
 	h.Write([]byte(data))
@@ -105,6 +110,10 @@ func (m *SignedCookieMiddleware) validateSignedCookie(cookieValue string) (strin
 
 	userID := dataParts[0]
 
-
 	return userID, true
+}
+
+func GetUserIDFromContext(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(UserIDKey).(string)
+	return userID, ok
 }

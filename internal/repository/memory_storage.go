@@ -44,11 +44,11 @@ func (s *MemoryStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	return urls, nil
 }
 
-func (s *MemoryStorage) GetByUserID(user_id string) ([]URLPair, error) {
+func (s *MemoryStorage) GetByUserID(userID string) ([]URLPair, error) {
 	return []URLPair{}, nil
 }
 
-func (s * MemoryStorage) Delete(doneCh chan struct{}, inputCh chan string, user_id string) (chan error) {
+func (s * MemoryStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) (chan error) {
 	return nil
 }
 

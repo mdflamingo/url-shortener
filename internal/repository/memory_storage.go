@@ -19,7 +19,7 @@ func NewMemoryStorage() *MemoryStorage {
 	}
 }
 
-func (s *MemoryStorage) Save(shortURL, origURL string) (string, error) {
+func (s *MemoryStorage) Save(shortURL, origURL, userID string) (string, error) {
 	if _, ok := s.data[shortURL]; ok {
 		return "", ErrURLExists
 	}
@@ -30,7 +30,7 @@ func (s *MemoryStorage) Save(shortURL, origURL string) (string, error) {
 func (s *MemoryStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	for i, url := range urls {
 		for {
-			_, err := s.Save(url.ShortURL, url.OriginalURL)
+			_, err := s.Save(url.ShortURL, url.OriginalURL, url.UserID)
 			if err != nil {
 				if errors.Is(err, ErrURLExists) {
 					urls[i].ShortURL = service.GenerateShortURLForBatch(url.OriginalURL)

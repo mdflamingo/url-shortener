@@ -47,7 +47,7 @@ func NewFileStorage(filename string) (*FileStorage, error) {
 	return storage, nil
 }
 
-func (fs *FileStorage) Save(shortURL, originalURL string) (string, error) {
+func (fs *FileStorage) Save(shortURL, originalURL, userID string) (string, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
@@ -74,7 +74,7 @@ func (fs *FileStorage) Save(shortURL, originalURL string) (string, error) {
 func (fs *FileStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	for i, url := range urls {
 		for {
-			_, err := fs.Save(url.ShortURL, url.OriginalURL)
+			_, err := fs.Save(url.ShortURL, url.OriginalURL, url.UserID)
 			if err != nil {
 				if fmt.Sprintf("%v", err) == fmt.Sprintf("short URL already exists: %s", url.ShortURL) {
 					urls[i].ShortURL = service.GenerateShortURLForBatch(url.OriginalURL)

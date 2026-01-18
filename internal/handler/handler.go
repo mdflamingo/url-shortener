@@ -33,7 +33,12 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		)
 		return
 	}
-
+	userID := request.Context().Value(UserIDKey)
+	if userID == nil {
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 	body, err := io.ReadAll(request.Body)
 
 	if err != nil {
@@ -61,7 +66,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	shortURL, err := GenerateAndSaveShortURL(originalURL, storage)
+	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID.(string))
 
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {
@@ -117,7 +122,6 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage rep
 }
 
 func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-
 	if request.Header.Get("Content-Type") != "application/json" {
 		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
 		http.Error(
@@ -125,6 +129,12 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 			"Invalid Content-Type",
 			http.StatusUnsupportedMediaType,
 		)
+		return
+	}
+	userID := request.Context().Value(UserIDKey)
+	if userID == nil {
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
@@ -151,7 +161,7 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		return
 	}
 
-	shortURL, err := GenerateAndSaveShortURL(origURL.URL, storage)
+	shortURL, err := GenerateAndSaveShortURL(origURL.URL, storage, userID.(string))
 
 	if errors.Is(err, repository.ErrConflict) {
 		fullURL, joinErr := url.JoinPath(baseURL, shortURL)
@@ -218,6 +228,13 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 }
 
 func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
+	userID := request.Context().Value(UserIDKey)
+	if userID == nil {
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	var batches []models.BatchRequest
 	var buf bytes.Buffer
 
@@ -296,12 +313,12 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 	response.Write(respJSON)
 }
 
-func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage) (string, error) {
+func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, userID string) (string, error) {
 	var maxAttempts = 10
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shortURL := service.GenerateShortURL(6)
-		savedShortURL, err := storage.Save(shortURL, originalURL)
+		savedShortURL, err := storage.Save(shortURL, originalURL, userID)
 
 		if err == nil {
 			return savedShortURL, nil
@@ -338,59 +355,57 @@ func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage 
 
 func UserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	userID := request.Context().Value(UserIDKey)
-    if userID == nil {
-        response.Header().Set("Content-Type", "application/json")
-        response.WriteHeader(http.StatusUnauthorized)
-        return
-    }
+	if userID == nil {
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 
-    urls, err := storage.GetByUserID(userID.(string))
-    if err != nil {
-        logger.Log.Error("Failed to get URLs from storage",
-            zap.Error(err))
-        http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-        return
-    }
+	urls, err := storage.GetByUserID(userID.(string))
+	if err != nil {
+		logger.Log.Error("Failed to get URLs from storage",
+			zap.Error(err))
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
 
-    if len(urls) == 0 {
-        response.Header().Set("Content-Type", "application/json")
-        response.WriteHeader(http.StatusNoContent)
-        return
-    }
+	if len(urls) == 0 {
+		response.Header().Set("Content-Type", "application/json")
+		response.WriteHeader(http.StatusNoContent)
+		return
+	}
 
-    responses := make([]models.ResponseByUser, 0, len(urls))
-    for _, pair := range urls {
-        fullURL, err := url.JoinPath(baseURL, pair.ShortURL)
-        if err != nil {
-            logger.Log.Error("Failed to join URL path",
-                zap.String("base_url", baseURL),
-                zap.String("short_url", pair.ShortURL),
-                zap.Error(err))
-            http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-            return
-        }
+	responses := make([]models.ResponseByUser, 0, len(urls))
+	for _, pair := range urls {
+		fullURL, err := url.JoinPath(baseURL, pair.ShortURL)
+		if err != nil {
+			logger.Log.Error("Failed to join URL path",
+				zap.String("base_url", baseURL),
+				zap.String("short_url", pair.ShortURL),
+				zap.Error(err))
+			http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
 
-        responses = append(responses, models.ResponseByUser{
-            OriginalURL: pair.OriginalURL,
-            ShortURL:    fullURL,
-        })
-    }
+		responses = append(responses, models.ResponseByUser{
+			OriginalURL: pair.OriginalURL,
+			ShortURL:    fullURL,
+		})
+	}
 
-    respJSON, err := json.Marshal(responses)
-    if err != nil {
-        logger.Log.Error("Failed to marshal response to JSON", zap.Error(err))
-        http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-        return
-    }
+	respJSON, err := json.Marshal(responses)
+	if err != nil {
+		logger.Log.Error("Failed to marshal response to JSON", zap.Error(err))
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
 
-    response.Header().Set("Content-Type", "application/json")
-    response.WriteHeader(http.StatusOK)
-    response.Write(respJSON)
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(http.StatusOK)
+	response.Write(respJSON)
 }
 
-
 func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-	logger.Log.Info("DeleteUserURLSHandler called")
 	userID := request.Context().Value(UserIDKey)
 	if userID == nil {
 		response.Header().Set("Content-Type", "application/json")

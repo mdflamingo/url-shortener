@@ -12,7 +12,7 @@ var ErrShortURLConflict = errors.New("short URL conflict")
 type URLStorage interface {
 	Save(shortURL, originalURL, userID string) (string, error)
 	SaveMany(urls []URLPair) ([]URLPair, error)
-    Get(shortURL string) (originalURL string, found bool, deleted bool)
+	Get(shortURL string) (originalURL string, found bool, deleted bool)
 	GetByUserID(userID string) ([]URLPair, error)
 	Delete(doneCh chan struct{}, inputCh chan string, userID string) chan error
 	Close() error

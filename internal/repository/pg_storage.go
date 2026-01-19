@@ -22,7 +22,7 @@ import (
 type URLPair struct {
 	ShortURL    string
 	OriginalURL string
-	UserID string
+	UserID      string
 }
 
 type DBStorage struct {
@@ -112,10 +112,10 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	for _, url := range urls {
 		// batch.Queue(
 		// 	`INSERT INTO urls (short_url, full_url, user_id)
-        //      VALUES ($1, $2, $3)
-        //      ON CONFLICT (full_url)
-        //      DO UPDATE SET short_url = EXCLUDED.short_url
-        //      RETURNING short_url`,
+		//      VALUES ($1, $2, $3)
+		//      ON CONFLICT (full_url)
+		//      DO UPDATE SET short_url = EXCLUDED.short_url
+		//      RETURNING short_url`,
 		// 	url.ShortURL, url.OriginalURL, url.UserID,
 		// )
 		batch.Queue(
@@ -168,19 +168,19 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 }
 
 func (d *DBStorage) Get(shortURL string) (string, bool, bool) {
-    ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-    var originalURL string
-    var deleted bool
-    err := d.pool.QueryRow(ctx, "SELECT full_url, is_deleted FROM urls WHERE short_url = $1", shortURL).Scan(&originalURL, &deleted)
-    if err != nil {
-        if errors.Is(err, sql.ErrNoRows) {
-            return "", false, false
-        }
-        return "", false, false
-    }
-    return originalURL, true, deleted
+	var originalURL string
+	var deleted bool
+	err := d.pool.QueryRow(ctx, "SELECT full_url, is_deleted FROM urls WHERE short_url = $1", shortURL).Scan(&originalURL, &deleted)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", false, false
+		}
+		return "", false, false
+	}
+	return originalURL, true, deleted
 }
 
 func (d *DBStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) chan error {

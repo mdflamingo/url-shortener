@@ -268,7 +268,7 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 		urlPairs = append(urlPairs, repository.URLPair{
 			ShortURL:    shortURL,
 			OriginalURL: row.OriginalURL,
-			UserID: userID.(string),
+			UserID:      userID.(string),
 		})
 	}
 

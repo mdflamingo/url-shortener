@@ -52,9 +52,12 @@ func (s *MemoryStorage) Delete(doneCh chan struct{}, inputCh chan string, userID
 	return nil
 }
 
-func (s *MemoryStorage) Get(shortURL string) (string, bool) {
+func (s *MemoryStorage) Get(shortURL string) (string, bool, bool) {
 	origURL, exists := s.data[shortURL]
-	return origURL, exists
+	if !exists {
+		return "", false, false
+	}
+	return origURL, true, false
 }
 
 func (s *MemoryStorage) Close() error {

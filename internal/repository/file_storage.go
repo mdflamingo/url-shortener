@@ -21,6 +21,7 @@ type FileStorage struct {
 type URL struct {
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+	IsDeleted bool `json:"is_deleted"`
 }
 
 type Producer struct {
@@ -96,12 +97,12 @@ func (fs *FileStorage) Delete(doneCh chan struct{}, inputCh chan string, userID 
 	return nil
 }
 
-func (fs *FileStorage) Get(shortURL string) (string, bool) {
+func (fs *FileStorage) Get(shortURL string) (string, bool, bool) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
-	originalURL, exists := fs.findInFile(shortURL)
-	return originalURL, exists
+	originalURL, exists, isDeleted := fs.findInFile(shortURL)
+	return originalURL, exists, isDeleted
 }
 
 func (fs *FileStorage) Close() error {
@@ -112,14 +113,14 @@ func (fs *FileStorage) Close() error {
 }
 
 func (fs *FileStorage) checkExists(shortURL string) (bool, error) {
-	_, exists := fs.findInFile(shortURL)
+	_, _, exists := fs.findInFile(shortURL)
 	return exists, nil
 }
 
-func (fs *FileStorage) findInFile(shortURL string) (string, bool) {
+func (fs *FileStorage) findInFile(shortURL string) (string, bool, bool) {
 	file, err := os.OpenFile(fs.filename, os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 	defer file.Close()
 
@@ -131,7 +132,7 @@ func (fs *FileStorage) findInFile(shortURL string) (string, bool) {
 			if err == io.EOF {
 				break
 			}
-			return "", false
+			return "", false, false
 		}
 
 		if len(data) == 0 || (len(data) == 1 && data[0] == '\n') {
@@ -144,11 +145,11 @@ func (fs *FileStorage) findInFile(shortURL string) (string, bool) {
 		}
 
 		if url.ShortURL == shortURL {
-			return url.OriginalURL, true
+			return url.OriginalURL, url.IsDeleted, true
 		}
 	}
 
-	return "", false
+	return "", false, false
 }
 
 func NewProducer(filename string) (*Producer, error) {

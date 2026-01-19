@@ -106,15 +106,23 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 
 func GetHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
 	id := chi.URLParam(request, "id")
-	origURL, ok := storage.Get(id)
+	origURL, found, deleted := storage.Get(id)
 
-	if ok {
-		http.Redirect(response, request, origURL, http.StatusTemporaryRedirect)
-	} else {
+	if !found {
 		logger.Log.Warn("short URL not found",
 			zap.String("short_id", id))
 		http.Error(response, "URL not found", http.StatusNotFound)
+		return
 	}
+
+	if deleted {
+		logger.Log.Warn("short URL is deleted",
+			zap.String("short_id", id))
+		http.Error(response, "Gone", http.StatusGone)
+		return
+	}
+
+	http.Redirect(response, request, origURL, http.StatusTemporaryRedirect)
 }
 
 func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {

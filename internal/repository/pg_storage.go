@@ -167,23 +167,20 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	return urls, nil
 }
 
-func (d *DBStorage) Get(shortURL string) (string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+func (d *DBStorage) Get(shortURL string) (string, bool, bool) {
+    ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+    defer cancel()
 
-	var originalURL string
-	err := d.pool.QueryRow(ctx,
-		"SELECT full_url FROM urls WHERE short_url = $1 AND is_deleted = False",
-		shortURL).Scan(&originalURL)
-
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", false
-		}
-		return "", false
-	}
-
-	return originalURL, true
+    var originalURL string
+    var deleted bool
+    err := d.pool.QueryRow(ctx, "SELECT full_url, is_deleted FROM urls WHERE short_url = $1", shortURL).Scan(&originalURL, &deleted)
+    if err != nil {
+        if errors.Is(err, sql.ErrNoRows) {
+            return "", false, false
+        }
+        return "", false, false
+    }
+    return originalURL, true, deleted
 }
 
 func (d *DBStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) chan error {

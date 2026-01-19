@@ -317,7 +317,7 @@ func TestJSONPostHandler(t *testing.T) {
 
 				parts := strings.Split(response.Result, "/")
 				shortID := parts[len(parts)-1]
-				originalURL, exists := storage.Get(shortID)
+				originalURL, exists, _ := storage.Get(shortID)
 				assert.True(t, exists)
 				assert.Equal(t, "https://example.com", originalURL)
 			}
@@ -367,7 +367,7 @@ func TestGzipCompression(t *testing.T) {
 
 		parts := strings.Split(response.Result, "/")
 		shortID := parts[len(parts)-1]
-		originalURL, exists := storage.Get(shortID)
+		originalURL, exists, _ := storage.Get(shortID)
 		assert.True(t, exists)
 		assert.Equal(t, "https://example.com", originalURL)
 	})

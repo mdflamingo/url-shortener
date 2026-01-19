@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -21,6 +22,7 @@ type FileStorage struct {
 type URL struct {
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+	UserID      string `json:"user_id"`
 	IsDeleted   bool   `json:"is_deleted"`
 }
 
@@ -57,12 +59,14 @@ func (fs *FileStorage) Save(shortURL, originalURL, userID string) (string, error
 		return "", fmt.Errorf("failed to check URL existence: %w", err)
 	}
 	if exists {
-		return "", fmt.Errorf("short URL already exists: %s", shortURL)
+		return "", ErrConflict
 	}
 
 	url := &URL{
 		ShortURL:    shortURL,
 		OriginalURL: originalURL,
+		UserID:      userID,
+		IsDeleted:   false,
 	}
 
 	if err := fs.producer.WriteURL(url); err != nil {
@@ -77,7 +81,7 @@ func (fs *FileStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 		for {
 			_, err := fs.Save(url.ShortURL, url.OriginalURL, url.UserID)
 			if err != nil {
-				if fmt.Sprintf("%v", err) == fmt.Sprintf("short URL already exists: %s", url.ShortURL) {
+				if errors.Is(err, ErrConflict) {
 					urls[i].ShortURL = service.GenerateShortURLForBatch(url.OriginalURL)
 					continue
 				}
@@ -90,19 +94,68 @@ func (fs *FileStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 }
 
 func (fs *FileStorage) GetByUserID(userID string) ([]URLPair, error) {
-	return []URLPair{}, nil
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+
+	urlMap := fs.loadURLMap()
+	result := make([]URLPair, 0)
+	for shortURL, url := range urlMap {
+		if url.UserID == userID && !url.IsDeleted {
+			result = append(result, URLPair{
+				ShortURL:    shortURL,
+				OriginalURL: url.OriginalURL,
+				UserID:      url.UserID,
+			})
+		}
+	}
+	return result, nil
 }
 
 func (fs *FileStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) chan error {
-	return nil
+	errCh := make(chan error, 1)
+
+	go func() {
+		defer close(errCh)
+
+		for {
+			select {
+			case <-doneCh:
+				return
+			case shortURL, ok := <-inputCh:
+				if !ok {
+					return
+				}
+
+				fs.mu.Lock()
+				urlMap := fs.loadURLMap()
+				if url, exists := urlMap[shortURL]; exists && url.UserID == userID {
+					deleteURL := &URL{
+						ShortURL:    shortURL,
+						OriginalURL: url.OriginalURL,
+						UserID:      url.UserID,
+						IsDeleted:   true,
+					}
+					if err := fs.producer.WriteURL(deleteURL); err != nil {
+						errCh <- fmt.Errorf("failed to mark URL as deleted: %w", err)
+					}
+				}
+				fs.mu.Unlock()
+			}
+		}
+	}()
+
+	return errCh
 }
 
 func (fs *FileStorage) Get(shortURL string) (string, bool, bool) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
-	originalURL, exists, isDeleted := fs.findInFile(shortURL)
-	return originalURL, exists, isDeleted
+	urlMap := fs.loadURLMap()
+	if url, exists := urlMap[shortURL]; exists {
+		return url.OriginalURL, true, url.IsDeleted
+	}
+	return "", false, false
 }
 
 func (fs *FileStorage) Close() error {
@@ -113,14 +166,17 @@ func (fs *FileStorage) Close() error {
 }
 
 func (fs *FileStorage) checkExists(shortURL string) (bool, error) {
-	_, _, exists := fs.findInFile(shortURL)
+	urlMap := fs.loadURLMap()
+	_, exists := urlMap[shortURL]
 	return exists, nil
 }
 
-func (fs *FileStorage) findInFile(shortURL string) (string, bool, bool) {
+func (fs *FileStorage) loadURLMap() map[string]URL {
+	urlMap := make(map[string]URL)
+
 	file, err := os.OpenFile(fs.filename, os.O_RDONLY|os.O_CREATE, 0666)
 	if err != nil {
-		return "", false, false
+		return urlMap
 	}
 	defer file.Close()
 
@@ -132,7 +188,7 @@ func (fs *FileStorage) findInFile(shortURL string) (string, bool, bool) {
 			if err == io.EOF {
 				break
 			}
-			return "", false, false
+			continue
 		}
 
 		if len(data) == 0 || (len(data) == 1 && data[0] == '\n') {
@@ -144,12 +200,10 @@ func (fs *FileStorage) findInFile(shortURL string) (string, bool, bool) {
 			continue
 		}
 
-		if url.ShortURL == shortURL {
-			return url.OriginalURL, url.IsDeleted, true
-		}
+		urlMap[url.ShortURL] = url
 	}
 
-	return "", false, false
+	return urlMap
 }
 
 func NewProducer(filename string) (*Producer, error) {

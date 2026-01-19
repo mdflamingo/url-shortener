@@ -123,7 +123,7 @@ func TestPostHandler(t *testing.T) {
 				for _, char := range shortID {
 					assert.True(t, strings.Contains(letters, string(char)))
 				}
-				origURL, exists := storage.Get(shortID)
+				origURL, exists, _ := storage.Get(shortID)
 				assert.True(t, exists)
 				assert.Equal(t, tt.body, origURL)
 			} else {

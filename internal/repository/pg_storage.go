@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/mdflamingo/url-shortener/internal/logger"
+	"go.uber.org/zap"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -199,6 +201,7 @@ func (d *DBStorage) processBatch(ctx context.Context, batch []string, userID str
 	if err != nil {
 		fmt.Printf("Error deleting batch: %v\n", err)
 	}
+	logger.Log.Info("Deleted batch", zap.Int("count", len(batch)), zap.String("userID", userID))
 	return err
 }
 

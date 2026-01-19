@@ -389,7 +389,17 @@ func UserURLSHandler(response http.ResponseWriter, request *http.Request, baseUR
 }
 
 func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-	userID := request.Context().Value(UserIDKey)
+	userIDValue := request.Context().Value(UserIDKey)
+	if userIDValue == nil {
+		http.Error(response, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	userID, ok := userIDValue.(string)
+	if !ok || userID == "" {
+		http.Error(response, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+	logger.Log.Info("Starting delete for user", zap.String("userID", userID))
 
 	var urls []string
 	var buf bytes.Buffer
@@ -423,15 +433,18 @@ func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, 
 		for _, url := range urls {
 			select {
 			case <-doneCh:
+				logger.Log.Info("Delete cancelled")
 				return
 			case inputCh <- url:
+				logger.Log.Info("Sending URL for delete", zap.String("url", url))
 			}
 		}
 	}()
 
-	resultCh := storage.Delete(doneCh, inputCh, userID.(string))
+	resultCh := storage.Delete(doneCh, inputCh, userID)
 
 	go func() {
+		defer close(doneCh)
 		for err := range resultCh {
 			if err != nil {
 				logger.Log.Error("Failed to delete URL batch", zap.Error(err))
@@ -439,6 +452,7 @@ func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, 
 				logger.Log.Info("URL batch deleted successfully")
 			}
 		}
+		logger.Log.Info("All delete operations completed")
 	}()
 
 	response.Header().Set("Content-Type", "application/json")

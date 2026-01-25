@@ -15,6 +15,7 @@ import (
 	"github.com/mdflamingo/url-shortener/internal/handler"
 	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
+	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,8 +26,8 @@ func setupRouter(t *testing.T, baseURL string, storage *repository.FileStorage) 
 	t.Helper()
 	r := chi.NewRouter()
 	cookieSecret := "test-secret-key"
-	cookieMiddleware := NewSignedCookieMiddleware(cookieSecret)
-	r.Use(gzipMiddleware)
+	cookieMiddleware := middleware.NewSignedCookieMiddleware(cookieSecret)
+	r.Use(middleware.GzipMiddleware)
 	r.Use(cookieMiddleware.CookieMiddleware)
 
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {

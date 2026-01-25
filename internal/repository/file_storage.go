@@ -59,7 +59,7 @@ func (fs *FileStorage) Save(shortURL, originalURL, userID string) (string, error
 		return "", fmt.Errorf("failed to check URL existence: %w", err)
 	}
 	if exists {
-		return "", ErrConflict
+		return "", fmt.Errorf("short URL already exists: %s", shortURL)
 	}
 
 	url := &URL{

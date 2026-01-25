@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/mdflamingo/url-shortener/internal/logger"
+	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/mdflamingo/url-shortener/internal/service"
-
 	"go.uber.org/zap"
 
 	"github.com/go-chi/chi/v5"
@@ -34,7 +34,12 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	userID := request.Context().Value(UserIDKey)
+	userID, err := middleware.GetUserIDFromRequest(request)
+	if err != nil {
+		logger.Log.Warn("failed to get userID", zap.Error(err))
+		http.Error(response, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 	body, err := io.ReadAll(request.Body)
 
 	if err != nil {
@@ -62,7 +67,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID.(string))
+	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID)
 
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {
@@ -139,9 +144,13 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 	var origURL models.Request
 	var buf bytes.Buffer
 
-	userID := request.Context().Value(UserIDKey)
-
-	_, err := buf.ReadFrom(request.Body)
+	userID, err := middleware.GetUserIDFromRequest(request)
+	if err != nil {
+		logger.Log.Warn("failed to get userID", zap.Error(err))
+		http.Error(response, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	_, err = buf.ReadFrom(request.Body)
 	if err != nil {
 		logger.Log.Error("failed to read request body", zap.Error(err))
 		http.Error(response, err.Error(), http.StatusBadRequest)
@@ -161,7 +170,7 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		return
 	}
 
-	shortURL, err := GenerateAndSaveShortURL(origURL.URL, storage, userID.(string))
+	shortURL, err := GenerateAndSaveShortURL(origURL.URL, storage, userID)
 
 	if errors.Is(err, repository.ErrConflict) {
 		fullURL, joinErr := url.JoinPath(baseURL, shortURL)
@@ -231,9 +240,13 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 	var batches []models.BatchRequest
 	var buf bytes.Buffer
 
-	userID := request.Context().Value(UserIDKey)
-
-	_, err := buf.ReadFrom(request.Body)
+	userID, err := middleware.GetUserIDFromRequest(request)
+	if err != nil {
+		logger.Log.Warn("failed to get userID", zap.Error(err))
+		http.Error(response, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	_, err = buf.ReadFrom(request.Body)
 	if err != nil {
 		logger.Log.Error("failed to read request body", zap.Error(err))
 		http.Error(response, err.Error(), http.StatusBadRequest)
@@ -268,7 +281,7 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 		urlPairs = append(urlPairs, repository.URLPair{
 			ShortURL:    shortURL,
 			OriginalURL: row.OriginalURL,
-			UserID:      userID.(string),
+			UserID:      userID,
 		})
 	}
 
@@ -349,10 +362,15 @@ func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage 
 	response.Write([]byte("OK"))
 }
 
-func UserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-	userID := request.Context().Value(UserIDKey)
+func GetUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
+	userID, err := middleware.GetUserIDFromRequest(request)
+	if err != nil {
+		logger.Log.Warn("failed to get userID", zap.Error(err))
+		http.Error(response, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
-	urls, err := storage.GetByUserID(userID.(string))
+	urls, err := storage.GetByUserID(userID)
 	if err != nil {
 		logger.Log.Error("Failed to get URLs from storage",
 			zap.Error(err))
@@ -397,22 +415,17 @@ func UserURLSHandler(response http.ResponseWriter, request *http.Request, baseUR
 }
 
 func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-	userIDValue := request.Context().Value(UserIDKey)
-	if userIDValue == nil {
+	userID, err := middleware.GetUserIDFromRequest(request)
+	if err != nil {
+		logger.Log.Warn("failed to get userID", zap.Error(err))
 		http.Error(response, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	userID, ok := userIDValue.(string)
-	if !ok || userID == "" {
-		http.Error(response, "Invalid user ID", http.StatusBadRequest)
-		return
-	}
-	logger.Log.Info("Starting delete for user", zap.String("userID", userID))
 
 	var urls []string
 	var buf bytes.Buffer
 
-	_, err := buf.ReadFrom(request.Body)
+	_, err = buf.ReadFrom(request.Body)
 	if err != nil {
 		logger.Log.Error("failed to read request body", zap.Error(err))
 		http.Error(response, err.Error(), http.StatusBadRequest)

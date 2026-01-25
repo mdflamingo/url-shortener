@@ -5,12 +5,12 @@ import (
 	"net/http"
 
 	"github.com/mdflamingo/url-shortener/internal/config"
-	"github.com/mdflamingo/url-shortener/internal/handler"
 	"github.com/mdflamingo/url-shortener/internal/logger"
+	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/mdflamingo/url-shortener/internal/repository"
+	"github.com/mdflamingo/url-shortener/internal/router"
 	"go.uber.org/zap"
 
-	"github.com/go-chi/chi/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
@@ -22,6 +22,9 @@ func main() {
 }
 
 func run(conf *config.Config) error {
+	if conf.CookieSecretKey == "" {
+		logger.Log.Fatal("CookieSecretKey is required")
+	}
 	if err := logger.Initialize(conf.LogLevel); err != nil {
 		return err
 	}
@@ -35,36 +38,8 @@ func run(conf *config.Config) error {
 	}
 	defer storage.Close()
 
-	r := chi.NewRouter()
-
-	cookieSecret := conf.CookieSecretKey
-	cookieMiddleware := NewSignedCookieMiddleware(cookieSecret)
-
-	r.Use(logger.RequestLogger)
-	r.Use(gzipMiddleware)
-	r.Use(cookieMiddleware.CookieMiddleware)
-
-	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
-		handler.DBHealthCheck(w, r, storage)
-	})
-	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
-		handler.GetHandler(w, req, storage)
-	})
-	r.Post("/", func(w http.ResponseWriter, req *http.Request) {
-		handler.PostHandler(w, req, conf.BaseShortURL, storage)
-	})
-	r.Post("/api/shorten", func(w http.ResponseWriter, req *http.Request) {
-		handler.JSONPostHandler(w, req, conf.BaseShortURL, storage)
-	})
-	r.Post("/api/shorten/batch", func(w http.ResponseWriter, req *http.Request) {
-		handler.BatchHandler(w, req, conf.BaseShortURL, storage)
-	})
-	r.Get("/api/user/urls", func(w http.ResponseWriter, req *http.Request) {
-		handler.UserURLSHandler(w, req, conf.BaseShortURL, storage)
-	})
-	r.Delete("/api/user/urls", func(w http.ResponseWriter, req *http.Request) {
-		handler.DeleteUserURLSHandler(w, req, conf.BaseShortURL, storage)
-	})
+	cookieMiddleware := middleware.NewSignedCookieMiddleware(conf.CookieSecretKey)
+	r := router.NewRouter(conf, storage, cookieMiddleware)
 
 	return http.ListenAndServe(conf.RunAddr, r)
 }

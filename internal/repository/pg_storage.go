@@ -110,14 +110,6 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	batch := &pgx.Batch{}
 
 	for _, url := range urls {
-		// batch.Queue(
-		// 	`INSERT INTO urls (short_url, full_url, user_id)
-		//      VALUES ($1, $2, $3)
-		//      ON CONFLICT (full_url)
-		//      DO UPDATE SET short_url = EXCLUDED.short_url
-		//      RETURNING short_url`,
-		// 	url.ShortURL, url.OriginalURL, url.UserID,
-		// )
 		batch.Queue(
 			`INSERT INTO urls (short_url, full_url, user_id)
              VALUES ($1, $2, $3)

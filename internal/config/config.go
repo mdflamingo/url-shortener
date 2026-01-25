@@ -23,7 +23,7 @@ func ParseFlags() *Config {
 	logLevel := flag.String("l", "INFO", "log level")
 	fileStoragePath := flag.String("f", "urls.csv", "urls file path")
 	dataBaseDSN := flag.String("d", "", "connect to postgres")
-	cookieSecretKey := flag.String("s", "secretkey", "you secret key for cookie")
+	cookieSecretKey := flag.String("s", "default-secret-key", "you secret key for cookie")
 
 	flag.Parse()
 

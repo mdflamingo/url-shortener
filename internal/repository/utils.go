@@ -57,12 +57,11 @@ func (d *DBStorage) fanIn(doneCh chan struct{}, resultChs ...chan error) chan er
 	var wg sync.WaitGroup
 
 	for _, ch := range resultChs {
-		chClosure := ch
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for err := range chClosure {
+			for err := range ch {
 				select {
 				case <-doneCh:
 					return

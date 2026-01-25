@@ -372,8 +372,7 @@ func GetUserURLSHandler(response http.ResponseWriter, request *http.Request, bas
 
 	urls, err := storage.GetByUserID(userID)
 	if err != nil {
-		logger.Log.Error("Failed to get URLs from storage",
-			zap.Error(err))
+		logger.Log.Error("Failed to get URLs from storage", zap.Error(err))
 		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}

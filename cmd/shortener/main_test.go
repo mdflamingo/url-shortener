@@ -13,9 +13,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mdflamingo/url-shortener/internal/handler"
+	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
-	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

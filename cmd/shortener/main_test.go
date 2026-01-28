@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/mdflamingo/url-shortener/internal/handler"
+	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/stretchr/testify/assert"
@@ -24,6 +25,11 @@ const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 func setupRouter(t *testing.T, baseURL string, storage *repository.FileStorage) http.Handler {
 	t.Helper()
 	r := chi.NewRouter()
+	cookieSecret := "test-secret-key"
+	cookieMiddleware := middleware.NewSignedCookieMiddleware(cookieSecret)
+	r.Use(middleware.GzipMiddleware)
+	r.Use(cookieMiddleware.CookieMiddleware)
+
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
 		handler.GetHandler(w, req, storage)
 	})
@@ -118,7 +124,7 @@ func TestPostHandler(t *testing.T) {
 				for _, char := range shortID {
 					assert.True(t, strings.Contains(letters, string(char)))
 				}
-				origURL, exists := storage.Get(shortID)
+				origURL, exists, _ := storage.Get(shortID)
 				assert.True(t, exists)
 				assert.Equal(t, tt.body, origURL)
 			} else {
@@ -132,7 +138,8 @@ func TestGetHandler(t *testing.T) {
 	storage := createTestStorage(t)
 	testShortURL := "abc123"
 	testOriginalURL := "https://example.com"
-	_, err := storage.Save(testShortURL, testOriginalURL)
+	testUserID := "abc-abc"
+	_, err := storage.Save(testShortURL, testOriginalURL, testUserID)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -311,7 +318,7 @@ func TestJSONPostHandler(t *testing.T) {
 
 				parts := strings.Split(response.Result, "/")
 				shortID := parts[len(parts)-1]
-				originalURL, exists := storage.Get(shortID)
+				originalURL, exists, _ := storage.Get(shortID)
 				assert.True(t, exists)
 				assert.Equal(t, "https://example.com", originalURL)
 			}
@@ -323,17 +330,12 @@ func TestGzipCompression(t *testing.T) {
 	storage := createTestStorage(t)
 	baseURL := "http://localhost:8080"
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handler.JSONPostHandler(w, r, baseURL, storage)
-	})
+	router := setupRouter(t, baseURL, storage)
 
-	handlerWithMiddleware := gzipMiddleware(handler)
-
-	srv := httptest.NewServer(handlerWithMiddleware)
+	srv := httptest.NewServer(router)
 	defer srv.Close()
 
 	requestBody := `{"url": "https://example.com"}`
-
 	t.Run("sends_gzip_request", func(t *testing.T) {
 		buf := bytes.NewBuffer(nil)
 		zb := gzip.NewWriter(buf)
@@ -366,7 +368,7 @@ func TestGzipCompression(t *testing.T) {
 
 		parts := strings.Split(response.Result, "/")
 		shortID := parts[len(parts)-1]
-		originalURL, exists := storage.Get(shortID)
+		originalURL, exists, _ := storage.Get(shortID)
 		assert.True(t, exists)
 		assert.Equal(t, "https://example.com", originalURL)
 	})

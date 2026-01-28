@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
 	"github.com/jackc/pgx/v5"
+	"github.com/mdflamingo/url-shortener/internal/logger"
+	"go.uber.org/zap"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -19,6 +22,7 @@ import (
 type URLPair struct {
 	ShortURL    string
 	OriginalURL string
+	UserID      string
 }
 
 type DBStorage struct {
@@ -60,19 +64,19 @@ func NewDBStorage(dsn string) (*DBStorage, error) {
 	return &DBStorage{pool: pool}, nil
 }
 
-func (d *DBStorage) Save(shortURL, originalURL string) (string, error) {
+func (d *DBStorage) Save(shortURL, originalURL, userID string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	var returnedShortURL string
 
 	err := d.pool.QueryRow(ctx,
-		`INSERT INTO urls (short_url, full_url)
-         VALUES ($1, $2)
+		`INSERT INTO urls (short_url, full_url, user_id)
+         VALUES ($1, $2, $3)
          ON CONFLICT (full_url)
          DO UPDATE SET full_url = EXCLUDED.full_url
          RETURNING short_url`,
-		shortURL, originalURL).Scan(&returnedShortURL)
+		shortURL, originalURL, userID).Scan(&returnedShortURL)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -90,88 +94,139 @@ func (d *DBStorage) Save(shortURL, originalURL string) (string, error) {
 }
 
 func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
-    if len(urls) == 0 {
-        return urls, nil
-    }
+	if len(urls) == 0 {
+		return urls, nil
+	}
 
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    tx, err := d.pool.Begin(ctx)
-    if err != nil {
-        return nil, fmt.Errorf("failed to begin transaction: %w", err)
-    }
-    defer tx.Rollback(ctx)
+	tx, err := d.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
-    batch := &pgx.Batch{}
+	batch := &pgx.Batch{}
 
-    for _, url := range urls {
-        batch.Queue(
-            `INSERT INTO urls (short_url, full_url)
-             VALUES ($1, $2)
+	for _, url := range urls {
+		batch.Queue(
+			`INSERT INTO urls (short_url, full_url, user_id)
+             VALUES ($1, $2, $3)
              ON CONFLICT (full_url)
-             DO UPDATE SET short_url = EXCLUDED.short_url
+             DO NOTHING
              RETURNING short_url`,
-            url.ShortURL, url.OriginalURL,
-        )
-    }
+			url.ShortURL, url.OriginalURL, url.UserID,
+		)
+	}
 
-    br := tx.SendBatch(ctx, batch)
+	br := tx.SendBatch(ctx, batch)
 
-    results := make([]string, len(urls))
+	results := make([]string, len(urls))
 
-    for i := 0; i < len(urls); i++ {
-        err := br.QueryRow().Scan(&results[i])
-        if err != nil {
-            var pgErr *pgconn.PgError
-            if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-                var existingShortURL string
-                if queryErr := tx.QueryRow(ctx,
-                    `SELECT short_url FROM urls WHERE full_url = $1`,
-                    urls[i].OriginalURL).Scan(&existingShortURL); queryErr != nil {
-                    br.Close()
-                    return nil, fmt.Errorf("failed to get existing URL for %s: %w", urls[i].OriginalURL, queryErr)
-                }
+	for i := 0; i < len(urls); i++ {
+		err := br.QueryRow().Scan(&results[i])
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+				var existingShortURL string
+				if queryErr := tx.QueryRow(ctx,
+					`SELECT short_url FROM urls WHERE full_url = $1`,
+					urls[i].OriginalURL).Scan(&existingShortURL); queryErr != nil {
+					br.Close()
+					return nil, fmt.Errorf("failed to get existing URL for %s: %w", urls[i].OriginalURL, queryErr)
+				}
 
-                urls[i].ShortURL = existingShortURL
-                results[i] = existingShortURL
-            } else {
-                br.Close()
-                return nil, fmt.Errorf("failed to insert URL at index %d: %w", i, err)
-            }
-        } else {
-            urls[i].ShortURL = results[i]
-        }
-    }
+				urls[i].ShortURL = existingShortURL
+				results[i] = existingShortURL
+			} else {
+				br.Close()
+				return nil, fmt.Errorf("failed to insert URL at index %d: %w", i, err)
+			}
+		} else {
+			urls[i].ShortURL = results[i]
+		}
+	}
 
-    if err := br.Close(); err != nil {
-        return nil, fmt.Errorf("failed to close batch: %w", err)
-    }
+	if err := br.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close batch: %w", err)
+	}
 
-    if err := tx.Commit(ctx); err != nil {
-        return nil, fmt.Errorf("failed to commit transaction: %w", err)
-    }
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
 
-    return urls, nil
+	return urls, nil
 }
 
-func (d *DBStorage) Get(shortURL string) (string, bool) {
+func (d *DBStorage) Get(shortURL string) (string, bool, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	var originalURL string
-	err := d.pool.QueryRow(ctx,
-		"SELECT full_url FROM urls WHERE short_url = $1",
-		shortURL).Scan(&originalURL)
-
+	var deleted bool
+	err := d.pool.QueryRow(ctx, "SELECT full_url, is_deleted FROM urls WHERE short_url = $1", shortURL).Scan(&originalURL, &deleted)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", false
+			return "", false, false
 		}
-		return "", false
+		return "", false, false
+	}
+	return originalURL, true, deleted
+}
+
+func (d *DBStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) chan error {
+	resultChs := d.fanOut(doneCh, inputCh, userID)
+	finalCh := d.fanIn(doneCh, resultChs...)
+
+	return finalCh
+}
+
+func (d *DBStorage) processBatch(ctx context.Context, batch []string, userID string) error {
+	query := `UPDATE urls SET is_deleted = true
+              WHERE short_url = ANY($1) AND user_id = $2 AND is_deleted = false`
+
+	_, err := d.pool.Exec(ctx, query, batch, userID)
+	if err != nil {
+		fmt.Printf("Error deleting batch: %v\n", err)
+	}
+	logger.Log.Info("Deleted batch", zap.Int("count", len(batch)), zap.String("userID", userID))
+	return err
+}
+
+func (d *DBStorage) GetByUserID(userID string) ([]URLPair, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	rows, err := d.pool.Query(ctx,
+		"SELECT short_url, full_url FROM urls WHERE user_id = $1",
+		userID)
+
+	if err != nil {
+		return nil, fmt.Errorf("database query error: %w", err)
+	}
+	defer rows.Close()
+
+	var urls []URLPair
+
+	for rows.Next() {
+		var url URLPair
+
+		if err := rows.Scan(&url.ShortURL, &url.OriginalURL); err != nil {
+			return nil, fmt.Errorf("data scan error: %w", err)
+		}
+		urls = append(urls, url)
 	}
 
-	return originalURL, true
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows processing error: %w", err)
+	}
+
+	if len(urls) == 0 {
+		return []URLPair{}, nil
+	}
+
+	return urls, nil
 }
 
 func (d *DBStorage) Close() error {

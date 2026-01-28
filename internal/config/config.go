@@ -12,6 +12,7 @@ type Config struct {
 	LogLevel        string
 	FileStoragePath string
 	DataBaseDSN     string
+	CookieSecretKey string
 }
 
 func ParseFlags() *Config {
@@ -22,6 +23,7 @@ func ParseFlags() *Config {
 	logLevel := flag.String("l", "INFO", "log level")
 	fileStoragePath := flag.String("f", "urls.csv", "urls file path")
 	dataBaseDSN := flag.String("d", "", "connect to postgres")
+	cookieSecretKey := flag.String("s", "default-secret-key", "you secret key for cookie")
 
 	flag.Parse()
 
@@ -30,6 +32,7 @@ func ParseFlags() *Config {
 	cfg.LogLevel = strings.ToUpper(getEnvOrDefault("LOG_LEVEL", *logLevel))
 	cfg.FileStoragePath = getEnvOrDefault("FILE_STORAGE_PATH", *fileStoragePath)
 	cfg.DataBaseDSN = getEnvOrDefault("DATABASE_DSN", *dataBaseDSN)
+	cfg.CookieSecretKey = getEnvOrDefault("COOKIE_SECRET_KEY", *cookieSecretKey)
 
 	return cfg
 }

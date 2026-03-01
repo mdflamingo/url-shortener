@@ -10,23 +10,21 @@ import (
 	"sync"
 )
 
-
 type AuditEvent struct {
-	TS      int64  `json:"ts"`
-	Action  string `json:"action"`
-	UserID  string `json:"user_id"`
-	URL     string `json:"url"`
+	TS     int64  `json:"ts"`
+	Action string `json:"action"`
+	UserID string `json:"user_id"`
+	URL    string `json:"url"`
 }
 
 type Observer interface {
 	OnAudit(event AuditEvent)
 }
 
-
 // file
 type FileObserver struct {
 	file *os.File
-	mu       sync.RWMutex
+	mu   sync.RWMutex
 }
 
 func NewFileObserver(path string) (*FileObserver, error) {

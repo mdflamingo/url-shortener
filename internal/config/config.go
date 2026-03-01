@@ -13,8 +13,8 @@ type Config struct {
 	FileStoragePath string
 	DataBaseDSN     string
 	CookieSecretKey string
-	AuditFile string
-	AuditURL string
+	AuditFile       string
+	AuditURL        string
 }
 
 func ParseFlags() *Config {

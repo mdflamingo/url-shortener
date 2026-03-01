@@ -9,6 +9,7 @@ import (
 	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/mdflamingo/url-shortener/internal/router"
+	"github.com/mdflamingo/url-shortener/internal/service"
 	"go.uber.org/zap"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -29,6 +30,21 @@ func run(conf *config.Config) error {
 		return err
 	}
 
+	auditService := service.NewAuditService()
+	fileObs, err := service.NewFileObserver(conf.AuditFile)
+	if err != nil {
+		logger.Log.Warn("Failed to init file audit observer", zap.Error(err))
+	} else if fileObs != nil {
+		auditService.Attach(fileObs)
+		logger.Log.Info("Audit file enabled", zap.String("path", conf.AuditFile))
+	}
+
+	httpObs, err := service.NewAPIObserver(conf.AuditURL)
+	if httpObs != nil {
+		auditService.Attach(httpObs)
+		logger.Log.Info("Audit HTTP enabled", zap.String("url", conf.AuditURL))
+	}
+
 	logger.Log.Info("Running server", zap.String("address", conf.RunAddr))
 	logger.Log.Info("Base short URL", zap.String("url", conf.BaseShortURL))
 
@@ -39,7 +55,7 @@ func run(conf *config.Config) error {
 	defer storage.Close()
 
 	cookieMiddleware := middleware.NewSignedCookieMiddleware(conf.CookieSecretKey)
-	r := router.NewRouter(conf, storage, cookieMiddleware)
+	r := router.NewRouter(conf, storage, cookieMiddleware, auditService)
 
 	return http.ListenAndServe(conf.RunAddr, r)
 }

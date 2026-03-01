@@ -23,7 +23,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
+func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
 	if request.Header.Get("Content-Type") != "text/plain" {
 		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
 		http.Error(
@@ -104,12 +104,22 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
+	if audit != nil {
+		audit.Notify(service.AuditEvent{Action: "shorten", UserID: userID, URL: fullURL, TS: time.Now().Unix()})
+	}
 	response.Header().Set("Content-Type", "text/plain")
 	response.WriteHeader(http.StatusCreated)
 	response.Write([]byte(fullURL))
 }
 
-func GetHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
+func GetHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage, audit *service.AuditService) {
+	userID, err := middleware.GetUserIDFromRequest(request)
+	if err != nil {
+		logger.Log.Warn("failed to get userID", zap.Error(err))
+		http.Error(response, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	id := chi.URLParam(request, "id")
 	origURL, found, deleted := storage.Get(id)
 
@@ -126,11 +136,14 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage rep
 		http.Error(response, "Gone", http.StatusGone)
 		return
 	}
+	if audit != nil {
+		audit.Notify(service.AuditEvent{Action: "follow", UserID: userID, URL: origURL, TS: time.Now().Unix()})
+	}
 
 	http.Redirect(response, request, origURL, http.StatusTemporaryRedirect)
 }
 
-func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
+func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
 	if request.Header.Get("Content-Type") != "application/json" {
 		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
 		http.Error(
@@ -229,6 +242,10 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 			zap.Any("response_object", resp))
 		http.Error(response, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	if audit != nil {
+		audit.Notify(service.AuditEvent{Action: "shorten", UserID: userID, URL: fullURL, TS: time.Now().Unix()})
 	}
 
 	response.Header().Set("Content-Type", "application/json")

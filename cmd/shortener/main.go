@@ -1,3 +1,11 @@
+// Package main - точка входа в приложение URL Shortener
+//
+// Приложение предоставляет сервис для сокращения URL-адресов с поддержкой:
+// - Хранения в памяти, файле или PostgreSQL
+// - Аудита действий через файл или HTTP
+// - Cookie-аутентификации
+// - Пакетного создания коротких ссылок
+// - Удаления ссылок
 package main
 
 import (
@@ -22,6 +30,21 @@ func main() {
 	}
 }
 
+// run инициализирует и запускает HTTP-сервер
+//
+// Параметры:
+//   - conf: конфигурация приложения
+//
+// Возвращает:
+//   - error: ошибка при запуске сервера
+//
+// Функция выполняет:
+//   - Проверку обязательных параметров
+//   - Инициализацию логгера
+//   - Настройку сервиса аудита
+//   - Инициализацию хранилища
+//   - Настройку маршрутизатора
+//   - Запуск HTTP-сервера
 func run(conf *config.Config) error {
 	if conf.CookieSecretKey == "" {
 		logger.Log.Fatal("CookieSecretKey is required")
@@ -60,6 +83,19 @@ func run(conf *config.Config) error {
 	return http.ListenAndServe(conf.RunAddr, r)
 }
 
+// initStorage инициализирует хранилище URL в зависимости от конфигурации
+//
+// Параметры:
+//   - conf: конфигурация приложения
+//
+// Возвращает:
+//   - repository.URLStorage: инициализированное хранилище
+//   - error: ошибка при инициализации
+//
+// Приоритет выбора хранилища:
+//  1. PostgreSQL (если указан DataBaseDSN)
+//  2. Файловое хранилище (если указан FileStoragePath)
+//  3. In-memory хранилище (по умолчанию)
 func initStorage(conf *config.Config) (repository.URLStorage, error) {
 	if conf.DataBaseDSN != "" {
 		logger.Log.Info("Attempting to use database storage", zap.String("dsn", conf.DataBaseDSN))

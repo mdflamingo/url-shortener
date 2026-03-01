@@ -1,3 +1,12 @@
+// Package handler содержит HTTP-обработчики для URL Shortener
+//
+// Обработчики реализуют REST API для:
+// - Создания коротких ссылок (plain/text и JSON)
+// - Перехода по коротким ссылкам
+// - Пакетного создания ссылок
+// - Получения всех ссылок пользователя
+// - Удаления ссылок
+
 package handler
 
 import (
@@ -23,6 +32,17 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
+// PostHandler обрабатывает POST-запросы с текстовым URL
+//
+// Ожидает:
+//   - Content-Type: text/plain
+//   - Body: исходный URL в виде строки
+//
+// Возвращает:
+//   - 201 Created: короткий URL
+//   - 409 Conflict: существующий короткий URL
+//   - 400 Bad Request: неверный формат
+//   - 415 Unsupported Media Type: неверный Content-Type
 func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
 	if request.Header.Get("Content-Type") != "text/plain" {
 		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
@@ -112,6 +132,15 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 	response.Write([]byte(fullURL))
 }
 
+// GetHandler обрабатывает GET-запросы для перехода по короткой ссылке
+//
+// Параметры URL:
+//   - id: идентификатор короткой ссылки
+//
+// Возвращает:
+//   - 307 Temporary Redirect: перенаправление на исходный URL
+//   - 404 Not Found: ссылка не найдена
+//   - 410 Gone: ссылка удалена
 func GetHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage, audit *service.AuditService) {
 	userID, err := middleware.GetUserIDFromRequest(request)
 	if err != nil {
@@ -143,6 +172,17 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage rep
 	http.Redirect(response, request, origURL, http.StatusTemporaryRedirect)
 }
 
+// JSONPostHandler обрабатывает POST-запросы с JSON-телом
+//
+// Ожидает:
+//   - Content-Type: application/json
+//   - Body: {"url": "исходный URL"}
+//
+// Возвращает:
+//   - 201 Created: {"result": "короткий URL"}
+//   - 409 Conflict: {"result": "существующий URL"}
+//   - 400 Bad Request: неверный формат
+//   - 415 Unsupported Media Type: неверный Content-Type
 func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
 	if request.Header.Get("Content-Type") != "application/json" {
 		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
@@ -253,6 +293,14 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 	response.Write(respJSON)
 }
 
+// BatchHandler обрабатывает пакетное создание коротких ссылок
+//
+// Ожидает:
+//   - Content-Type: application/json
+//   - Body: [{"correlation_id": "id1", "original_url": "url1"}, ...]
+//
+// Возвращает:
+//   - 201 Created: [{"correlation_id": "id1", "short_url": "short1"}, ...]
 func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	var batches []models.BatchRequest
 	var buf bytes.Buffer
@@ -339,6 +387,18 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 	response.Write(respJSON)
 }
 
+// GenerateAndSaveShortURL генерирует уникальный короткий URL и сохраняет его
+//
+// Параметры:
+//   - originalURL: исходный длинный URL
+//   - storage: хранилище URL
+//   - userID: идентификатор пользователя
+//
+// Возвращает:
+//   - string: сгенерированный короткий URL
+//   - error: ошибка при генерации или сохранении
+//
+// При конфликте (уже существующий URL) возвращает существующий короткий URL
 func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, userID string) (string, error) {
 	var maxAttempts = 10
 
@@ -362,6 +422,11 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, 
 	return "", fmt.Errorf("failed to generate unique short URL after %d attempts", maxAttempts)
 }
 
+// DBHealthCheck проверяет доступность хранилища
+//
+// Возвращает:
+//   - 200 OK: хранилище доступно
+//   - 500 Internal Server Error: хранилище недоступно
 func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
 	logger.Log.Info("HealthCheck called", zap.String("method", request.Method))
 
@@ -379,6 +444,12 @@ func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage 
 	response.Write([]byte("OK"))
 }
 
+// GetUserURLSHandler возвращает все URL текущего пользователя
+//
+// Возвращает:
+//   - 200 OK: [{"short_url": "short", "original_url": "original"}, ...]
+//   - 204 No Content: у пользователя нет URL
+//   - 401 Unauthorized: пользователь не авторизован
 func GetUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	userID, err := middleware.GetUserIDFromRequest(request)
 	if err != nil {
@@ -430,6 +501,15 @@ func GetUserURLSHandler(response http.ResponseWriter, request *http.Request, bas
 	response.Write(respJSON)
 }
 
+// DeleteUserURLSHandler обрабатывает удаление нескольких URL
+//
+// Ожидает:
+//   - Body: ["short1", "short2", ...]
+//
+// Возвращает:
+//   - 202 Accepted: запрос принят в обработку
+//   - 400 Bad Request: неверный формат запроса
+//   - 401 Unauthorized: пользователь не авторизован
 func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	userID, err := middleware.GetUserIDFromRequest(request)
 	if err != nil {

@@ -96,7 +96,7 @@ func ExampleNewRouter() {
 	// Выполняем запрос
 	resp, _ = http.DefaultClient.Do(req)
 	shortURL := new(strings.Builder)
-	shortURL.ReadFrom(resp.Body)
+	io.Copy(shortURL, resp.Body)
 	resp.Body.Close()
 
 	println("✓ Создана короткая ссылка (текст):", shortURL.String())

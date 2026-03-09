@@ -70,7 +70,7 @@ func run(conf *config.Config) error {
 		logger.Log.Info("Audit file enabled", zap.String("path", conf.AuditFile))
 	}
 
-	httpObs, err := service.NewAPIObserver(conf.AuditURL)
+	httpObs, _ := service.NewAPIObserver(conf.AuditURL)
 	if httpObs != nil {
 		auditService.Attach(httpObs)
 		logger.Log.Info("Audit HTTP enabled", zap.String("url", conf.AuditURL))

@@ -35,7 +35,7 @@ func ParseFlags() *Config {
 	cfg.BaseShortURL = getEnvOrDefault("BASE_URL", *baseURL)
 	cfg.LogLevel = strings.ToUpper(getEnvOrDefault("LOG_LEVEL", *logLevel))
 	cfg.FileStoragePath = getEnvOrDefault("FILE_STORAGE_PATH", *fileStoragePath)
-	cfg.DataBaseDSN = getEnvOrDefault("DATABASE_DSN", *dataBaseDSN)
+	cfg.DataBaseDSN = getEnvOrDefault("DATABASE_CONN_STRING", *dataBaseDSN)
 	cfg.CookieSecretKey = getEnvOrDefault("COOKIE_SECRET_KEY", *cookieSecretKey)
 	cfg.AuditFile = getEnvOrDefault("AUDIT_FILE", *auditFile)
 	cfg.AuditURL = getEnvOrDefault("AUDIT_URL", *auditURL)

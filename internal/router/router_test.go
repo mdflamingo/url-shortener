@@ -87,6 +87,7 @@ func ExampleNewRouter() {
 	if resp.StatusCode == http.StatusOK {
 		println("✓ Сервер работает")
 	}
+	resp.Body.Close()
 
 	// ПРИМЕР 2: Создание короткой ссылки (текстовый формат)
 	reqBody := strings.NewReader("https://example.com/very/long/url")
@@ -146,6 +147,8 @@ func ExampleNewRouter() {
 		for _, url := range userURLs {
 			println("✓ Ссылка пользователя:", url.OriginalURL, "->", url.ShortURL)
 		}
+	} else {
+		resp.Body.Close()
 	}
 
 	// ПРИМЕР 6: Удаление ссылок
@@ -158,6 +161,7 @@ func ExampleNewRouter() {
 	if resp.StatusCode == http.StatusAccepted {
 		println("✓ Запрос на удаление принят")
 	}
+	resp.Body.Close()
 
 	// Output:
 	// ✓ Сервер работает
@@ -189,7 +193,7 @@ func Example_postHandler() {
 	shortURL, _ := io.ReadAll(resp.Body)
 	println("Статус:", resp.StatusCode)
 	println("Короткий URL:", string(shortURL))
-
+	resp.Body.Close()
 	// Output:
 	// Статус: 201
 	// Короткий URL: http://localhost:8080/abc123
@@ -220,6 +224,7 @@ func Example_getHandler() {
 	resp, _ := client.Get(server.URL + "/abc123")
 	println("Статус:", resp.StatusCode)
 	println("Location:", resp.Header.Get("Location"))
+	resp.Body.Close()
 
 	// Output:
 	// Статус: 307

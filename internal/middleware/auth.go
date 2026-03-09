@@ -9,8 +9,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/mdflamingo/url-shortener/internal/logger"
 	"go.uber.org/zap"
+
+	"github.com/mdflamingo/url-shortener/internal/logger"
 )
 
 type contextKey string

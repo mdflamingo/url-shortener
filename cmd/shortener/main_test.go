@@ -12,12 +12,14 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/mdflamingo/url-shortener/internal/handler"
 	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/mdflamingo/url-shortener/internal/service"
 )
 
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -27,17 +29,20 @@ func setupRouter(t *testing.T, baseURL string, storage *repository.FileStorage) 
 	r := chi.NewRouter()
 	cookieSecret := "test-secret-key"
 	cookieMiddleware := middleware.NewSignedCookieMiddleware(cookieSecret)
+
+	auditService := service.NewAuditService()
+
 	r.Use(middleware.GzipMiddleware)
 	r.Use(cookieMiddleware.CookieMiddleware)
 
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
-		handler.GetHandler(w, req, storage)
+		handler.GetHandler(w, req, storage, auditService)
 	})
 	r.Post("/", func(w http.ResponseWriter, req *http.Request) {
-		handler.PostHandler(w, req, baseURL, storage)
+		handler.PostHandler(w, req, baseURL, storage, auditService)
 	})
 	r.Post("/api/shorten", func(w http.ResponseWriter, req *http.Request) {
-		handler.JSONPostHandler(w, req, baseURL, storage)
+		handler.JSONPostHandler(w, req, baseURL, storage, auditService)
 	})
 	return r
 }
@@ -122,7 +127,7 @@ func TestPostHandler(t *testing.T) {
 				shortID := parts[len(parts)-1]
 				assert.Len(t, shortID, 6)
 				for _, char := range shortID {
-					assert.True(t, strings.Contains(letters, string(char)))
+					assert.True(t, strings.ContainsRune(letters, char))
 				}
 				origURL, exists, _ := storage.Get(shortID)
 				assert.True(t, exists)
@@ -336,6 +341,7 @@ func TestGzipCompression(t *testing.T) {
 	defer srv.Close()
 
 	requestBody := `{"url": "https://example.com"}`
+
 	t.Run("sends_gzip_request", func(t *testing.T) {
 		buf := bytes.NewBuffer(nil)
 		zb := gzip.NewWriter(buf)

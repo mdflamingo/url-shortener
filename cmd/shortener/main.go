@@ -11,7 +11,9 @@ package main
 import (
 	"log"
 	"net/http"
-    _ "net/http/pprof"
+	_ "net/http/pprof"
+
+	"go.uber.org/zap"
 
 	"github.com/mdflamingo/url-shortener/internal/config"
 	"github.com/mdflamingo/url-shortener/internal/logger"
@@ -19,18 +21,17 @@ import (
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/mdflamingo/url-shortener/internal/router"
 	"github.com/mdflamingo/url-shortener/internal/service"
-	"go.uber.org/zap"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 func main() {
 	go func() {
-        log.Println("Starting pprof server on :6060")
-        if err := http.ListenAndServe("localhost:6060", nil); err != nil {
-            log.Printf("Pprof server error: %v", err)
-        }
-    }()
+		log.Println("Starting pprof server on :6060")
+		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+			log.Printf("Pprof server error: %v", err)
+		}
+	}()
 	conf := config.ParseFlags()
 	if err := run(conf); err != nil {
 		log.Fatal(err)

@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
 	"github.com/mdflamingo/url-shortener/internal/config"
 	"github.com/mdflamingo/url-shortener/internal/handler"
 	"github.com/mdflamingo/url-shortener/internal/logger"

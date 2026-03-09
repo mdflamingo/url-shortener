@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/mdflamingo/url-shortener/internal/logger"
 	"go.uber.org/zap"
+
+	"github.com/mdflamingo/url-shortener/internal/logger"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"

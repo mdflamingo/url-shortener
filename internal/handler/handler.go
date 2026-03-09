@@ -21,12 +21,13 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/mdflamingo/url-shortener/internal/logger"
 	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/mdflamingo/url-shortener/internal/service"
-	"go.uber.org/zap"
 
 	"github.com/go-chi/chi/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"

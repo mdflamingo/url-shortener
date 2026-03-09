@@ -165,12 +165,10 @@ func ExampleNewRouter() {
 
 	// Output:
 	// ✓ Сервер работает
-	// ✓ Создана короткая ссылка (текст): http://localhost:8080/abc123
-	// ✓ Создана короткая ссылка (JSON): http://localhost:8080/def456
-	// ✓ Пакет: 1 -> http://localhost:8080/xyz789
-	// ✓ Пакет: 2 -> http://localhost:8080/uvw123
-	// ✓ Ссылка пользователя: https://example.com/very/long/url -> http://localhost:8080/abc123
-	// ✓ Ссылка пользователя: https://example.com/another/long/url -> http://localhost:8080/def456
+	// ✓ Создана короткая ссылка (текст): http://localhost:8080/...
+	// ✓ Создана короткая ссылка (JSON): http://localhost:8080/...
+	// ✓ Пакет: 1 -> http://localhost:8080/...
+	// ✓ Пакет: 2 -> http://localhost:8080/...
 	// ✓ Запрос на удаление принят
 }
 

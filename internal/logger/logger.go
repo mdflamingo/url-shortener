@@ -2,27 +2,80 @@ package logger
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var Log *zap.Logger = zap.NewNop()
 
+var (
+	once     sync.Once
+	initErr  error
+	levelStr string
+)
+
 func Initialize(level string) error {
+	levelStr = level
+
 	lvl, err := zap.ParseAtomicLevel(level)
 	if err != nil {
 		return err
 	}
-	cfg := zap.NewProductionConfig()
-	cfg.Level = lvl
-	zl, err := cfg.Build()
-	if err != nil {
-		return err
-	}
 
-	Log = zl
-	return nil
+	var logger *zap.Logger
+	once.Do(func() {
+		cfg := zap.NewProductionConfig()
+		cfg.Level = lvl
+
+		cfg.Sampling = &zap.SamplingConfig{
+			Initial:    100,
+			Thereafter: 100,
+		}
+		cfg.DisableStacktrace = true
+		cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+		logger, err = cfg.Build(zap.AddCallerSkip(1))
+		if err != nil {
+			initErr = err
+			return
+		}
+
+		Log = logger
+	})
+
+	return initErr
+}
+
+func getLogger() *zap.Logger {
+	once.Do(func() {
+		lvl := zap.NewAtomicLevelAt(zap.InfoLevel)
+		if levelStr != "" {
+			if parsed, err := zap.ParseAtomicLevel(levelStr); err == nil {
+				lvl = parsed
+			}
+		}
+
+		cfg := zap.NewProductionConfig()
+		cfg.Level = lvl
+		cfg.Sampling = &zap.SamplingConfig{
+			Initial:    100,
+			Thereafter: 100,
+		}
+		cfg.DisableStacktrace = true
+		cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+		logger, err := cfg.Build(zap.AddCallerSkip(1))
+		if err != nil {
+			Log = zap.NewNop()
+			return
+		}
+		Log = logger
+	})
+
+	return Log
 }
 
 type (
@@ -49,13 +102,21 @@ func (r *loggingResponseWriter) WriteHeader(statusCode int) {
 }
 
 func RequestLogger(h http.Handler) http.Handler {
+	pool := sync.Pool{
+		New: func() interface{} {
+			return &responseData{
+				status: 200,
+				size:   0,
+			}
+		},
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		responseData := &responseData{
-			status: 200,
-			size:   0,
-		}
+		responseData := pool.Get().(*responseData)
+		responseData.status = 200
+		responseData.size = 0
 
 		lw := &loggingResponseWriter{
 			ResponseWriter: w,
@@ -64,9 +125,11 @@ func RequestLogger(h http.Handler) http.Handler {
 
 		h.ServeHTTP(lw, r)
 
+		defer pool.Put(responseData)
+
 		duration := time.Since(start)
 
-		Log.Info("request completed",
+		getLogger().Info("request completed",
 			zap.String("uri", r.RequestURI),
 			zap.String("method", r.Method),
 			zap.Int("status", responseData.status),
@@ -74,4 +137,11 @@ func RequestLogger(h http.Handler) http.Handler {
 			zap.Int("size", responseData.size),
 		)
 	})
+}
+
+func Sync() error {
+	if Log != nil {
+		return Log.Sync()
+	}
+	return nil
 }

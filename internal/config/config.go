@@ -26,8 +26,8 @@ func ParseFlags() *Config {
 	fileStoragePath := flag.String("f", "urls.csv", "urls file path")
 	dataBaseDSN := flag.String("d", "", "connect to postgres")
 	cookieSecretKey := flag.String("s", "default-secret-key", "you secret key for cookie")
-	auditFile := flag.String("--audit-file", "logs.log", "file for audit logs")
-	auditURL := flag.String("--audit-url", "http://example.com/logs", "API to send audit logs")
+	auditFile := flag.String("audit-file", "logs.log", "file for audit logs")
+	auditURL := flag.String("audit-url", "http://example.com/logs", "API to send audit logs")
 
 	flag.Parse()
 

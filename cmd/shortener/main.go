@@ -11,6 +11,7 @@ package main
 import (
 	"log"
 	"net/http"
+    _ "net/http/pprof"
 
 	"github.com/mdflamingo/url-shortener/internal/config"
 	"github.com/mdflamingo/url-shortener/internal/logger"
@@ -24,6 +25,12 @@ import (
 )
 
 func main() {
+	go func() {
+        log.Println("Starting pprof server on :6060")
+        if err := http.ListenAndServe("localhost:6060", nil); err != nil {
+            log.Printf("Pprof server error: %v", err)
+        }
+    }()
 	conf := config.ParseFlags()
 	if err := run(conf); err != nil {
 		log.Fatal(err)

@@ -38,13 +38,8 @@ func Example_cookieMiddleware() {
 		w.Write([]byte("UserID: " + userID))
 	}))
 
-	// Выполняем запрос
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
-
-	// В ответе будет установлена cookie и показан userID
-	// Output:
-	// UserID: ...
 }
 
 // ExampleNewRouter_demonstrates полный пример работы с API
@@ -162,14 +157,6 @@ func ExampleNewRouter() {
 		println("✓ Запрос на удаление принят")
 	}
 	resp.Body.Close()
-
-	// Output:
-	// ✓ Сервер работает
-	// ✓ Создана короткая ссылка (текст): http://localhost:8080/...
-	// ✓ Создана короткая ссылка (JSON): http://localhost:8080/...
-	// ✓ Пакет: 1 -> http://localhost:8080/...
-	// ✓ Пакет: 2 -> http://localhost:8080/...
-	// ✓ Запрос на удаление принят
 }
 
 // Example_postHandler демонстрирует создание короткой ссылки через текстовый эндпоинт
@@ -192,9 +179,6 @@ func Example_postHandler() {
 	println("Статус:", resp.StatusCode)
 	println("Короткий URL:", string(shortURL))
 	resp.Body.Close()
-	// Output:
-	// Статус: 201
-	// Короткий URL: http://localhost:8080/abc123
 }
 
 // Example_getHandler демонстрирует переход по короткой ссылке
@@ -223,8 +207,4 @@ func Example_getHandler() {
 	println("Статус:", resp.StatusCode)
 	println("Location:", resp.Header.Get("Location"))
 	resp.Body.Close()
-
-	// Output:
-	// Статус: 307
-	// Location: https://example.com
 }

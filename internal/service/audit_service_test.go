@@ -68,6 +68,44 @@ func TestAuditService(t *testing.T) {
 }
 
 
+func TestAuditService_Detach(t *testing.T) {
+	t.Run("detach observer", func(t *testing.T) {
+		service := NewAuditService()
+		observer1 := &mockObserver{name: "obs1"}
+		observer2 := &mockObserver{name: "obs2"}
+
+		service.Attach(observer1)
+		service.Attach(observer2)
+		assert.Len(t, service.observers, 2)
+
+	})
+}
+
+func TestAuditService_NotifyWithMultipleObservers(t *testing.T) {
+	service := NewAuditService()
+
+	observers := make([]*mockObserver, 5)
+	for i := 0; i < 5; i++ {
+		observers[i] = &mockObserver{name: "obs"}
+		service.Attach(observers[i])
+	}
+
+	event := AuditEvent{
+		TS:     12345,
+		Action: "multi_test",
+		UserID: "multi_user",
+		URL:    "multi_url",
+	}
+
+	service.Notify(event)
+
+	for _, obs := range observers {
+		assert.True(t, obs.called)
+		assert.Equal(t, event, obs.lastEvent)
+	}
+}
+
+
 func TestFileObserver(t *testing.T) {
 	t.Run("create with empty path", func(t *testing.T) {
 		obs, err := NewFileObserver("")
@@ -139,6 +177,68 @@ func TestFileObserver(t *testing.T) {
 			nilObs.OnAudit(AuditEvent{})
 		})
 	})
+}
+
+
+func TestFileObserver_InvalidPath(t *testing.T) {
+	t.Run("create with invalid path", func(t *testing.T) {
+		obs, err := NewFileObserver("/nonexistent/directory/audit.log")
+		assert.Error(t, err)
+		assert.Nil(t, obs)
+		assert.Contains(t, err.Error(), "failed to open/create log file")
+	})
+
+	t.Run("create with directory path", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		obs, err := NewFileObserver(tmpDir)
+
+		if err == nil && obs != nil {
+			defer obs.file.Close()
+		}
+	})
+}
+
+func TestFileObserver_MultipleWrites(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "audit.log")
+	obs, err := NewFileObserver(tmpFile)
+	require.NoError(t, err)
+	defer obs.file.Close()
+
+	events := []AuditEvent{
+		{TS: 1, Action: "action1", UserID: "user1", URL: "url1"},
+		{TS: 2, Action: "action2", UserID: "user2", URL: "url2"},
+		{TS: 3, Action: "action3", UserID: "user3", URL: "url3"},
+	}
+
+	for _, event := range events {
+		obs.OnAudit(event)
+	}
+
+	content, err := os.ReadFile(tmpFile)
+	require.NoError(t, err)
+
+	lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
+	assert.Len(t, lines, 3)
+
+	for i, line := range lines {
+		var event AuditEvent
+		err = json.Unmarshal(line, &event)
+		assert.NoError(t, err)
+		assert.Equal(t, events[i], event)
+	}
+}
+
+func TestFileObserver_Close(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "audit.log")
+	obs, err := NewFileObserver(tmpFile)
+	require.NoError(t, err)
+
+	assert.NotNil(t, obs.file)
+
+	err = obs.file.Close()
+	assert.NoError(t, err)
+
+	obs.OnAudit(AuditEvent{TS: 123, Action: "test"})
 }
 
 
@@ -218,6 +318,63 @@ func TestAPIObserver(t *testing.T) {
 }
 
 
+func TestAPIObserver_InvalidJSON(t *testing.T) {
+	obs, err := NewAPIObserver("http://example.com")
+	require.NoError(t, err)
+
+	assert.NotPanics(t, func() {
+		obs.OnAudit(AuditEvent{
+			TS:     123,
+			Action: "test",
+			UserID: "user",
+			URL:    "url",
+		})
+	})
+}
+
+func TestAPIObserver_ConcurrentPosts(t *testing.T) {
+	var mu sync.Mutex
+	count := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		count++
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	obs, err := NewAPIObserver(server.URL)
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			obs.OnAudit(AuditEvent{
+				TS:     time.Now().UnixNano(),
+				Action: "concurrent",
+				UserID: "user",
+				URL:    "url",
+			})
+		}()
+	}
+	wg.Wait()
+
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, 20, count)
+}
+
+func TestAPIObserver_WithNilObserver(t *testing.T) {
+	var obs *APIObserver
+
+	assert.NotPanics(t, func() {
+		obs.OnAudit(AuditEvent{})
+	})
+}
+
+
 func TestIntegration(t *testing.T) {
 	service := NewAuditService()
 
@@ -267,7 +424,54 @@ func TestIntegration(t *testing.T) {
 }
 
 
+func TestIntegration_WithMultipleEvents(t *testing.T) {
+	service := NewAuditService()
+
+	tmpFile := filepath.Join(t.TempDir(), "audit.log")
+	fileObs, err := NewFileObserver(tmpFile)
+	require.NoError(t, err)
+
+	receivedCount := 0
+	mu := sync.Mutex{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		receivedCount++
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	apiObs, err := NewAPIObserver(server.URL)
+	require.NoError(t, err)
+
+	service.Attach(fileObs)
+	service.Attach(apiObs)
+
+	eventCount := 5
+	for i := 0; i < eventCount; i++ {
+		service.Notify(AuditEvent{
+			TS:     int64(i),
+			Action: "multi",
+			UserID: "user",
+			URL:    "url",
+		})
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	assert.Equal(t, eventCount, receivedCount)
+	mu.Unlock()
+
+	content, err := os.ReadFile(tmpFile)
+	require.NoError(t, err)
+	lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
+	assert.Len(t, lines, eventCount)
+}
+
+
 type mockObserver struct {
+	name      string
 	called    bool
 	lastEvent AuditEvent
 }

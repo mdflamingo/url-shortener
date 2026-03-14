@@ -70,10 +70,12 @@ func (c *compressWriter) WriteHeader(statusCode int) {
 	c.statusCode = statusCode
 	c.headerWritten = true
 
+	// ИСПРАВЛЕНО: убрана лишняя проверка statusCode = 409 и исправлен синтаксис
 	// Content-Encoding только для сжимаемых ответов
 	if statusCode >= 200 && statusCode < 300 && statusCode != http.StatusNoContent {
 		c.w.Header().Set("Content-Encoding", "gzip")
 	}
+
 	c.w.WriteHeader(statusCode)
 }
 
@@ -131,6 +133,8 @@ func (c *compressReader) Close() error {
 // Регистрация:
 //
 //	r.Use(middleware.GzipMiddleware)
+//
+// GzipMiddleware - middleware для автоматического gzip сжатия запросов/ответов
 func GzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 1. Распаковка сжатого запроса
@@ -142,6 +146,15 @@ func GzipMiddleware(next http.Handler) http.Handler {
 			}
 			defer cr.Close()
 			r.Body = cr
+
+			contentType := r.Header.Get("Content-Type")
+			if strings.Contains(contentType, "application/x-gzip") ||
+				strings.Contains(contentType, "gzip") {
+				r.Header.Set("Content-Type", "text/plain; charset=utf-8")
+			}
+
+			// Удаляем заголовок Content-Encoding
+			r.Header.Del("Content-Encoding")
 		}
 
 		// 2. Сжатие ответа для клиента

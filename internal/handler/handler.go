@@ -47,11 +47,11 @@ import (
 func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
 	contentType := request.Header.Get("Content-Type")
 	if !strings.Contains(contentType, "text/plain") {
-		logger.Log.Warn("invalid content type", zap.String("content_type", contentType))
+		logger.Log.Warn("invalid content type",
+			zap.String("content_type", contentType))
 		http.Error(response, "Invalid Content-Type", http.StatusUnsupportedMediaType)
 		return
 	}
-
 	userID, err := middleware.GetUserIDFromRequest(request)
 	if err != nil {
 		logger.Log.Warn("failed to get userID", zap.Error(err))

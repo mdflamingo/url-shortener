@@ -31,10 +31,9 @@ func (c *compressWriter) Write(p []byte) (int, error) {
 		c.WriteHeader(c.statusCode)
 	}
 
-	if c.statusCode >= 200 && c.statusCode < 300 || c.statusCode == 201 {
+	if c.statusCode >= 200 && c.statusCode < 300 {
 		return c.zw.Write(p)
 	}
-
 	return c.w.Write(p)
 }
 
@@ -46,7 +45,7 @@ func (c *compressWriter) WriteHeader(statusCode int) {
 	c.statusCode = statusCode
 	c.headerWritten = true
 
-	if statusCode >= 200 && statusCode < 300 || statusCode == 201 {
+	if statusCode >= 200 && statusCode < 300 {
 		c.w.Header().Set("Content-Encoding", "gzip")
 		c.w.WriteHeader(statusCode)
 	} else {

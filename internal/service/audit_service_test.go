@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-
 func TestAuditService(t *testing.T) {
 	t.Run("create service", func(t *testing.T) {
 		service := NewAuditService()
@@ -67,7 +66,6 @@ func TestAuditService(t *testing.T) {
 	})
 }
 
-
 func TestAuditService_Detach(t *testing.T) {
 	t.Run("detach observer", func(t *testing.T) {
 		service := NewAuditService()
@@ -104,7 +102,6 @@ func TestAuditService_NotifyWithMultipleObservers(t *testing.T) {
 		assert.Equal(t, event, obs.lastEvent)
 	}
 }
-
 
 func TestFileObserver(t *testing.T) {
 	t.Run("create with empty path", func(t *testing.T) {
@@ -179,7 +176,6 @@ func TestFileObserver(t *testing.T) {
 	})
 }
 
-
 func TestFileObserver_InvalidPath(t *testing.T) {
 	t.Run("create with invalid path", func(t *testing.T) {
 		obs, err := NewFileObserver("/nonexistent/directory/audit.log")
@@ -240,7 +236,6 @@ func TestFileObserver_Close(t *testing.T) {
 
 	obs.OnAudit(AuditEvent{TS: 123, Action: "test"})
 }
-
 
 func TestAPIObserver(t *testing.T) {
 	t.Run("create with empty url", func(t *testing.T) {
@@ -317,7 +312,6 @@ func TestAPIObserver(t *testing.T) {
 	})
 }
 
-
 func TestAPIObserver_InvalidJSON(t *testing.T) {
 	obs, err := NewAPIObserver("http://example.com")
 	require.NoError(t, err)
@@ -374,7 +368,6 @@ func TestAPIObserver_WithNilObserver(t *testing.T) {
 	})
 }
 
-
 func TestIntegration(t *testing.T) {
 	service := NewAuditService()
 
@@ -423,7 +416,6 @@ func TestIntegration(t *testing.T) {
 	assert.Equal(t, event, fileEvent)
 }
 
-
 func TestIntegration_WithMultipleEvents(t *testing.T) {
 	service := NewAuditService()
 
@@ -468,7 +460,6 @@ func TestIntegration_WithMultipleEvents(t *testing.T) {
 	lines := bytes.Split(bytes.TrimSpace(content), []byte{'\n'})
 	assert.Len(t, lines, eventCount)
 }
-
 
 type mockObserver struct {
 	name      string

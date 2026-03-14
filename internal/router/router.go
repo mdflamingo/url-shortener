@@ -42,7 +42,7 @@ func NewRouter(conf *config.Config, storage repository.URLStorage, cookieMiddlew
 
 	// Подключение глобальных middleware
 	r.Use(logger.RequestLogger)
-	// r.Use(middleware.GzipMiddleware)
+	r.Use(middleware.GzipMiddleware)
 	r.Use(cookieMiddleware.CookieMiddleware)
 
 	// Эндпоинт для проверки работоспособности (health check)

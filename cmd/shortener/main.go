@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 
 	"go.uber.org/zap"
 
@@ -26,12 +27,18 @@ import (
 )
 
 func main() {
-	go func() {
-		log.Println("Starting pprof server on :6060")
-		if err := http.ListenAndServe("localhost:6060", nil); err != nil {
-			log.Printf("Pprof server error: %v", err)
-		}
-	}()
+	if os.Getenv("ENABLE_PPROF") == "true" {
+		go func() {
+			pprofServer := &http.Server{
+				Addr:    "localhost:6060",
+				Handler: http.DefaultServeMux,
+			}
+			log.Println("Starting pprof server on :6060")
+			if err := pprofServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("Pprof server error: %v", err)
+			}
+		}()
+	}
 	conf := config.ParseFlags()
 	if err := run(conf); err != nil {
 		log.Fatal(err)

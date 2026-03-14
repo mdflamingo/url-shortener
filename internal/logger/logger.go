@@ -1,3 +1,7 @@
+// Package logger предоставляет глобальный логгер на базе zap и middleware для логирования HTTP запросов
+//
+// Инициализирует структурированное логирование с поддержкой уровней (INFO, DEBUG, WARN, ERROR)
+// и логирует все входящие HTTP запросы с метриками (статус, размер ответа, время выполнения).
 package logger
 
 import (
@@ -9,6 +13,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// Log - глобальный логгер приложения (thread-safe singleton)
 var Log *zap.Logger = zap.NewNop()
 
 var (
@@ -17,6 +22,16 @@ var (
 	levelStr string
 )
 
+// Initialize инициализирует глобальный логгер с заданным уровнем логирования
+//
+// Поддерживаемые уровни: debug, info, warn, error (нечувствительно к регистру)
+// Применяет production конфигурацию с сэмплированием и ISO8601 временем.
+//
+// Пример:
+//
+//	logger.Initialize("debug")
+//
+// Возвращает ошибку при неудачной инициализации конфигурации zap.
 func Initialize(level string) error {
 	levelStr = level
 
@@ -49,6 +64,9 @@ func Initialize(level string) error {
 	return initErr
 }
 
+// getLogger возвращает инициализированный глобальный логгер (lazy initialization)
+//
+// Вызывается внутренне всеми лог-гер методами. Гарантирует thread-safe инициализацию.
 func getLogger() *zap.Logger {
 	once.Do(func() {
 		lvl := zap.NewAtomicLevelAt(zap.InfoLevel)
@@ -78,29 +96,43 @@ func getLogger() *zap.Logger {
 	return Log
 }
 
-type (
-	responseData struct {
-		status int
-		size   int
-	}
+// responseData содержит метрики HTTP ответа для логирования
+type responseData struct {
+	status int // HTTP статус код ответа
+	size   int // размер ответа в байтах
+}
 
-	loggingResponseWriter struct {
-		http.ResponseWriter
-		responseData *responseData
-	}
-)
+// loggingResponseWriter - обертка над http.ResponseWriter для перехвата метрик ответа
+type loggingResponseWriter struct {
+	http.ResponseWriter               // встраиваем оригинальный ResponseWriter
+	responseData        *responseData // метрики ответа
+}
 
+// Write перехватывает данные записи в ResponseWriter и подсчитывает размер
 func (r *loggingResponseWriter) Write(b []byte) (int, error) {
 	size, err := r.ResponseWriter.Write(b)
 	r.responseData.size += size
 	return size, err
 }
 
+// WriteHeader перехватывает установку HTTP статуса
 func (r *loggingResponseWriter) WriteHeader(statusCode int) {
 	r.ResponseWriter.WriteHeader(statusCode)
 	r.responseData.status = statusCode
 }
 
+// RequestLogger - middleware для логирования всех HTTP запросов
+//
+// Логирует: URI, метод, статус ответа, размер ответа, время выполнения.
+// Использует sync.Pool для минимизации аллокаций responseData.
+//
+// Регистрация в chi:
+//
+//	r.Use(logger.RequestLogger)
+//
+// Пример лога:
+//
+//	{"level":"info","ts":"2024-01-01T12:00:00Z","msg":"request completed","uri":"/api/shorten","method":"POST","status":201,"duration":2.345ms,"size":25}
 func RequestLogger(h http.Handler) http.Handler {
 	pool := sync.Pool{
 		New: func() interface{} {
@@ -139,6 +171,7 @@ func RequestLogger(h http.Handler) http.Handler {
 	})
 }
 
+// Sync синхронизирует все буферы логгера с дисковыми файлами
 func Sync() error {
 	if Log != nil {
 		return Log.Sync()

@@ -45,13 +45,10 @@ import (
 //   - 400 Bad Request: неверный формат
 //   - 415 Unsupported Media Type: неверный Content-Type
 func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
-	if request.Header.Get("Content-Type") != "text/plain" {
-		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
-		http.Error(
-			response,
-			"Invalid Content-Type",
-			http.StatusUnsupportedMediaType,
-		)
+	contentType := request.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "text/plain") {
+		logger.Log.Warn("invalid content type", zap.String("content_type", contentType))
+		http.Error(response, "Invalid Content-Type", http.StatusUnsupportedMediaType)
 		return
 	}
 
@@ -185,13 +182,10 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage rep
 //   - 400 Bad Request: неверный формат
 //   - 415 Unsupported Media Type: неверный Content-Type
 func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
-	if request.Header.Get("Content-Type") != "application/json" {
-		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
-		http.Error(
-			response,
-			"Invalid Content-Type",
-			http.StatusUnsupportedMediaType,
-		)
+	contentType := request.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "application/json") {
+		logger.Log.Warn("invalid content type", zap.String("content_type", contentType))
+		http.Error(response, "Invalid Content-Type", http.StatusUnsupportedMediaType)
 		return
 	}
 

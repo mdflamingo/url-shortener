@@ -56,7 +56,6 @@ type Observer interface {
 //   - Автоматическое создание файла при инициализации
 //   - Запись в формате JSON (по одному событию на строку)
 //   - Ошибки логируются через стандартный логгер
-
 type FileObserver struct {
 	file *os.File     // Файл для записи аудита
 	mu   sync.RWMutex // Мьютекс для потокобезопасной записи
@@ -190,6 +189,15 @@ type AuditService struct {
 }
 
 // NewAuditService создает новый экземпляр сервиса аудита
+//
+// Инициализирует пустой список наблюдателей.
+// Готов к немедленному использованию с Attach() и Notify().
+//
+// Пример:
+//
+//	audit := service.NewAuditService()
+//	audit.Attach(fileObserver)
+//	audit.Notify(event)
 func NewAuditService() *AuditService {
 	return &AuditService{
 		observers: make([]Observer, 0),

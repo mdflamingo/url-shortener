@@ -1,3 +1,12 @@
+// Package repository содержит PostgreSQL хранилище URL с поддержкой миграций и пула соединений
+//
+// Использует pgxpool для конкурентного доступа и автоматические миграции.
+// Поддерживает soft delete (is_deleted), батч операции, fan-out/fan-in удаление.
+// Уникальность обеспечивается через UNIQUE constraint на full_url.
+//
+// Таблица urls:
+//
+//	short_url (PK), full_url (UNIQUE), user_id, is_deleted (bool)
 package repository
 
 import (
@@ -21,25 +30,31 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-type URLPair struct {
-	ShortURL    string
-	OriginalURL string
-	UserID      string
-}
-
+// DBStorage - PostgreSQL хранилище с пулом соединений и миграциями
 type DBStorage struct {
-	dsn      string
-	pool     *pgxpool.Pool
-	poolOnce sync.Once
-	initErr  error
+	dsn      string        // DSN строка подключения
+	pool     *pgxpool.Pool // пул соединений (lazy init)
+	poolOnce sync.Once     // гарантия единственной инициализации пула
+	initErr  error         // ошибка инициализации
 }
 
+// NewDBStorage создает PostgreSQL хранилище
+//
+// dsn - строка подключения (postgres://user:pass@host:port/db?sslmode=disable).
+// Пул инициализируется лениво при первом запросе.
 func NewDBStorage(dsn string) (*DBStorage, error) {
 	return &DBStorage{
 		dsn: dsn,
 	}, nil
 }
 
+// getPool возвращает инициализированный пул соединений (lazy singleton)
+//
+// Настройки пула:
+//
+//	MaxConns=10, MinConns=2, MaxConnLifetime=1h, HealthCheck=1m
+//
+// Автоматически запускает миграции в фоне.
 func (d *DBStorage) getPool(ctx context.Context) (*pgxpool.Pool, error) {
 	d.poolOnce.Do(func() {
 		config, err := pgxpool.ParseConfig(d.dsn)
@@ -82,6 +97,10 @@ func (d *DBStorage) getPool(ctx context.Context) (*pgxpool.Pool, error) {
 	return d.pool, nil
 }
 
+// runMigrationsAsync запускает миграции БД в фоне
+//
+// Использует golang-migrate из папки migrations/.
+// Логирует результат выполнения.
 func (d *DBStorage) runMigrationsAsync() {
 	time.Sleep(1 * time.Second)
 
@@ -123,6 +142,9 @@ func (d *DBStorage) runMigrationsAsync() {
 	logger.Log.Info("Migrations completed successfully")
 }
 
+// Save сохраняет URL с обработкой конфликтов по full_url
+//
+// Использует UPSERT (ON CONFLICT full_url). Если возвращен другой shortURL - конфликт.
 func (d *DBStorage) Save(shortURL, originalURL, userID string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -157,6 +179,9 @@ func (d *DBStorage) Save(shortURL, originalURL, userID string) (string, error) {
 	return returnedShortURL, nil
 }
 
+// SaveMany сохраняет батч URL в транзакции с обработкой конфликтов
+//
+// Использует pgx.Batch + транзакцию. При конфликте возвращает существующий shortURL.
 func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	if len(urls) == 0 {
 		return urls, nil
@@ -228,6 +253,7 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	return urls, nil
 }
 
+// Get получает URL по shortURL с флагом удаления
 func (d *DBStorage) Get(shortURL string) (string, bool, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -251,6 +277,7 @@ func (d *DBStorage) Get(shortURL string) (string, bool, bool) {
 	return originalURL, true, deleted
 }
 
+// Delete асинхронно удаляет батчи URL (soft delete, fan-out/fan-in)
 func (d *DBStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) chan error {
 	resultChs := d.fanOut(doneCh, inputCh, userID)
 	finalCh := d.fanIn(doneCh, resultChs...)
@@ -258,6 +285,7 @@ func (d *DBStorage) Delete(doneCh chan struct{}, inputCh chan string, userID str
 	return finalCh
 }
 
+// processBatch удаляет батч URL пользователя (is_deleted = true)
 func (d *DBStorage) processBatch(ctx context.Context, batch []string, userID string) error {
 	pool, err := d.getPool(ctx)
 	if err != nil {
@@ -275,6 +303,7 @@ func (d *DBStorage) processBatch(ctx context.Context, batch []string, userID str
 	return err
 }
 
+// GetByUserID возвращает все URL пользователя (активные)
 func (d *DBStorage) GetByUserID(userID string) ([]URLPair, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -311,6 +340,7 @@ func (d *DBStorage) GetByUserID(userID string) ([]URLPair, error) {
 	return urls, nil
 }
 
+// Close закрывает пул соединений
 func (d *DBStorage) Close() error {
 	if d.pool != nil {
 		d.pool.Close()
@@ -318,6 +348,7 @@ func (d *DBStorage) Close() error {
 	return nil
 }
 
+// Ping проверяет доступность БД через пул
 func (d *DBStorage) Ping(ctx context.Context) error {
 	pool, err := d.getPool(ctx)
 	if err != nil {

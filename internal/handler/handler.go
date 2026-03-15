@@ -45,7 +45,11 @@ import (
 //   - 400 Bad Request: неверный формат
 //   - 415 Unsupported Media Type: неверный Content-Type
 func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
+	logger.Log.Info(">>> PostHandler START")
+
 	contentType := request.Header.Get("Content-Type")
+	logger.Log.Info("Content-Type", zap.String("type", contentType))
+	// contentType := request.Header.Get("Content-Type")
 	if !strings.Contains(contentType, "text/plain") {
 		logger.Log.Warn("invalid content type",
 			zap.String("content_type", contentType))
@@ -85,17 +89,16 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	logger.Log.Debug("Calling GenerateAndSaveShortURL",
-		zap.String("original_url", originalURL),
+	logger.Log.Info("BEFORE GenerateAndSaveShortURL",
+		zap.String("url", originalURL),
 		zap.String("userID", userID),
-	)
+		zap.Any("storage", storage))
 
 	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID)
 
-	logger.Log.Debug("GenerateAndSaveShortURL result",
-		zap.String("shortURL", shortURL),
-		zap.Error(err),
-	)
+	logger.Log.Info("AFTER GenerateAndSaveShortURL",
+		zap.String("short", shortURL),
+		zap.Error(err))
 
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {
@@ -405,11 +408,18 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 //
 // При конфликте (уже существующий URL) возвращает существующий короткий URL
 func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, userID string) (string, error) {
+	logger.Log.Info(">>> GenerateAndSaveShortURL",
+		zap.Any("storage", storage))
+	if storage == nil {
+		return "", fmt.Errorf("storage is nil")
+	}
 	var maxAttempts = 10
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shortURL := service.GenerateShortURL(6)
+		logger.Log.Info("Generated ID", zap.String("id", shortURL))
 		savedShortURL, err := storage.Save(shortURL, originalURL, userID)
+		logger.Log.Info("storage.Save()", zap.Error(err))
 
 		if err == nil {
 			return savedShortURL, nil

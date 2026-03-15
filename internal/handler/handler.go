@@ -52,12 +52,16 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		http.Error(response, "Invalid Content-Type", http.StatusUnsupportedMediaType)
 		return
 	}
-	userID, err := middleware.GetUserIDFromRequest(request)
-	if err != nil {
+
+	userID := ""
+	if uid, err := middleware.GetUserIDFromRequest(request); err == nil {
+		userID = uid
+	} else {
 		logger.Log.Warn("failed to get userID", zap.Error(err))
 		http.Error(response, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+
 	body, err := io.ReadAll(request.Body)
 
 	if err != nil {
@@ -85,7 +89,17 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
+	logger.Log.Debug("Calling GenerateAndSaveShortURL",
+		zap.String("original_url", originalURL),
+		zap.String("userID", userID),
+	)
+
 	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID)
+
+	logger.Log.Debug("GenerateAndSaveShortURL result",
+		zap.String("shortURL", shortURL),
+		zap.Error(err),
+	)
 
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {

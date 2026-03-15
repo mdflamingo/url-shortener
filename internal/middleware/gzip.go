@@ -15,6 +15,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/mdflamingo/url-shortener/internal/logger"
+	"go.uber.org/zap"
 )
 
 // compressWriter - обертка над http.ResponseWriter для сжатия ответа gzip
@@ -137,6 +140,11 @@ func (c *compressReader) Close() error {
 // GzipMiddleware - middleware для автоматического gzip сжатия запросов/ответов
 func GzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger.Log.Debug("GzipMiddleware",
+			zap.String("accept_encoding", r.Header.Get("Accept-Encoding")),
+			zap.String("content_encoding", r.Header.Get("Content-Encoding")),
+			zap.String("path", r.URL.Path),
+		)
 		// 1. Распаковка сжатого запроса
 		if strings.Contains(r.Header.Get("Content-Encoding"), "gzip") {
 			cr, err := newCompressReader(r.Body)

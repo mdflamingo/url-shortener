@@ -139,9 +139,10 @@ func initStorage(conf *config.Config) (repository.URLStorage, error) {
 			if storage, err := repository.NewFileStorage(conf.FileStoragePath); err == nil {
 				logger.Log.Info("Successfully initialized file storage")
 				return storage, nil
+			} else {
+				logger.Log.Warn("Failed to initialize file storage", zap.Error(err))
 			}
 		}
-		logger.Log.Warn("Failed to initialize file storage", zap.Error(err))
 	}
 
 	logger.Log.Info("Using in-memory storage")

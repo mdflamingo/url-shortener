@@ -23,9 +23,6 @@ jobs:
 
     env:
       DATABASE_CONN_STRING: "postgres://postgres:postgres@postgres:5432/praktikum?sslmode=disable"
-      TEST_ENV: "true"
-      GITHUB_ACTIONS: "true"
-      LOG_LEVEL: "debug"
 
     services:
       postgres:
@@ -63,24 +60,12 @@ jobs:
         run: |
           go install golang.org/x/tools/cmd/goimports@v0.23.0
 
-      - name: Debug environment
-        run: |
-          echo "Current directory: $(pwd)"
-          echo "Go version: $(go version)"
-          echo "User: $(whoami)"
-          echo "Files in current directory:"
-          ls -la
-          echo "Disk space:"
-          df -h
-
-      - name: Build server binary with debug info
+      - name: Build server binary
         run: |
           cd cmd/shortener
-          go build -buildvcs=false -gcflags="all=-N -l" -o shortener
-          echo "Binary built successfully"
-          ls -la shortener
+          go build -buildvcs=false -o shortener
 
-      - name: "Code increment #1 with debug"
+      - name: "Code increment #1"
         if: |
           github.ref == 'refs/heads/main' ||
           github.head_ref == 'iter1' ||
@@ -108,30 +93,8 @@ jobs:
           github.head_ref == 'iter23' ||
           github.head_ref == 'iter24'
         run: |
-          # Проверяем доступность порта
-          echo "Checking port 8080 availability..."
-          netstat -tulpn 2>/dev/null || echo "netstat not available"
-          
-          # Запускаем тест с подробным выводом
           shortenertest -test.v -test.run=^TestIteration1$ \
-              -binary-path=cmd/shortener/shortener \
-              -test.timeout=30s 2>&1 | tee test_output.log
-          
-          # Если тест упал, показываем дополнительную информацию
-          if [ ${PIPESTATUS[0]} -ne 0 ]; then
-            echo "=== TEST FAILED DETAILS ==="
-            echo "Checking if server process is running..."
-            ps aux | grep shortener || echo "No shortener process found"
-            
-            echo "Checking file permissions..."
-            ls -la /tmp/ || echo "Cannot list /tmp"
-            
-            echo "Checking network ports..."
-            ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null || echo "Cannot check ports"
-            
-            echo "=== END OF DEBUG INFO ==="
-            exit 1
-          fi
+              -binary-path=cmd/shortener/shortener
 
       - name: "Code increment #2"
         if: |
@@ -346,7 +309,6 @@ jobs:
           github.head_ref == 'iter24'
         run: |
           TEMP_FILE=$(random tempfile)
-          echo "Using temp file: $TEMP_FILE"
           shortenertest -test.v -test.run=^TestIteration9$ \
               -binary-path=cmd/shortener/shortener \
               -source-path=. \

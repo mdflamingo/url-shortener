@@ -52,16 +52,12 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		http.Error(response, "Invalid Content-Type", http.StatusUnsupportedMediaType)
 		return
 	}
-
-	userID := ""
-	if uid, err := middleware.GetUserIDFromRequest(request); err == nil {
-		userID = uid
-	} else {
+	userID, err := middleware.GetUserIDFromRequest(request)
+	if err != nil {
 		logger.Log.Warn("failed to get userID", zap.Error(err))
 		http.Error(response, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-
 	body, err := io.ReadAll(request.Body)
 
 	if err != nil {

@@ -111,23 +111,37 @@ func run(conf *config.Config) error {
 //  1. PostgreSQL (если указан DataBaseDSN)
 //  2. Файловое хранилище (если указан FileStoragePath)
 //  3. In-memory хранилище (по умолчанию)
+//
+// initStorage инициализирует хранилище URL в зависимости от конфигурации
 func initStorage(conf *config.Config) (repository.URLStorage, error) {
+	logger.Log.Info("Initializing storage",
+		zap.String("database_dsn", conf.DataBaseDSN),
+		zap.String("file_storage_path", conf.FileStoragePath))
+
 	if conf.DataBaseDSN != "" {
 		logger.Log.Info("Attempting to use database storage", zap.String("dsn", conf.DataBaseDSN))
 		if storage, err := repository.NewDBStorage(conf.DataBaseDSN); err == nil {
 			logger.Log.Info("Successfully initialized database storage")
 			return storage, nil
+		} else {
+			logger.Log.Warn("Failed to initialize database storage", zap.Error(err))
 		}
-		logger.Log.Warn("Failed to initialize database storage, trying file storage")
 	}
 
 	if conf.FileStoragePath != "" {
 		logger.Log.Info("Attempting to use file storage", zap.String("path", conf.FileStoragePath))
-		if storage, err := repository.NewFileStorage(conf.FileStoragePath); err == nil {
-			logger.Log.Info("Successfully initialized file storage")
-			return storage, nil
+
+		file, err := os.OpenFile(conf.FileStoragePath, os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			logger.Log.Warn("Cannot access file storage", zap.Error(err))
+		} else {
+			file.Close()
+			if storage, err := repository.NewFileStorage(conf.FileStoragePath); err == nil {
+				logger.Log.Info("Successfully initialized file storage")
+				return storage, nil
+			}
 		}
-		logger.Log.Warn("Failed to initialize file storage, using in-memory storage")
+		logger.Log.Warn("Failed to initialize file storage", zap.Error(err))
 	}
 
 	logger.Log.Info("Using in-memory storage")

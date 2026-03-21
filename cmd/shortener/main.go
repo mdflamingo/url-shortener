@@ -76,8 +76,7 @@ func run(conf *config.Config) error {
 
 	logger.Log.Info("Configuration loaded",
 		zap.String("address", conf.RunAddr),
-		zap.String("base_url", conf.BaseShortURL),
-		zap.String("storage_type", detectStorageType(conf)))
+		zap.String("base_url", conf.BaseShortURL))
 
 	storage, err := initStorage(conf)
 	if err != nil {

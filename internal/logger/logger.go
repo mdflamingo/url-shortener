@@ -32,7 +32,7 @@ var (
 //	logger.Initialize("debug")
 //
 // Возвращает ошибку при неудачной инициализации конфигурации zap.
-func Initialize(level string) error {
+func InitLogger(level string) error {
 	levelStr = level
 
 	lvl, err := zap.ParseAtomicLevel(level)

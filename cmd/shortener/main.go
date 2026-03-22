@@ -174,6 +174,5 @@ func initAuditService(conf *config.Config) (*service.AuditService, error) {
 	} else {
 		logger.Log.Info("Audit HTTP disabled (no URL provided)")
 	}
-
 	return auditService, nil
 }

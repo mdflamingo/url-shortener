@@ -1,3 +1,12 @@
+// Package handler содержит HTTP-обработчики для URL Shortener
+//
+// Обработчики реализуют REST API для:
+// - Создания коротких ссылок (plain/text и JSON)
+// - Перехода по коротким ссылкам
+// - Пакетного создания ссылок
+// - Получения всех ссылок пользователя
+// - Удаления ссылок
+
 package handler
 
 import (
@@ -12,28 +21,41 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/mdflamingo/url-shortener/internal/logger"
 	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/mdflamingo/url-shortener/internal/models"
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/mdflamingo/url-shortener/internal/service"
-	"go.uber.org/zap"
 
 	"github.com/go-chi/chi/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-	if request.Header.Get("Content-Type") != "text/plain" {
-		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
-		http.Error(
-			response,
-			"Invalid Content-Type",
-			http.StatusUnsupportedMediaType,
-		)
+// PostHandler обрабатывает POST-запросы с текстовым URL
+//
+// Ожидает:
+//   - Content-Type: text/plain
+//   - Body: исходный URL в виде строки
+//
+// Возвращает:
+//   - 201 Created: короткий URL
+//   - 409 Conflict: существующий короткий URL
+//   - 400 Bad Request: неверный формат
+//   - 415 Unsupported Media Type: неверный Content-Type
+func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
+	logger.Log.Info(">>> PostHandler START")
+
+	contentType := request.Header.Get("Content-Type")
+	logger.Log.Info("Content-Type", zap.String("type", contentType))
+	// contentType := request.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "text/plain") {
+		logger.Log.Warn("invalid content type",
+			zap.String("content_type", contentType))
+		http.Error(response, "Invalid Content-Type", http.StatusUnsupportedMediaType)
 		return
 	}
-
 	userID, err := middleware.GetUserIDFromRequest(request)
 	if err != nil {
 		logger.Log.Warn("failed to get userID", zap.Error(err))
@@ -67,7 +89,16 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
+	logger.Log.Info("BEFORE GenerateAndSaveShortURL",
+		zap.String("url", originalURL),
+		zap.String("userID", userID),
+		zap.Any("storage", storage))
+
 	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID)
+
+	logger.Log.Info("AFTER GenerateAndSaveShortURL",
+		zap.String("short", shortURL),
+		zap.Error(err))
 
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {
@@ -104,12 +135,31 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
+	if audit != nil {
+		audit.Notify(service.AuditEvent{Action: "shorten", UserID: userID, URL: fullURL, TS: time.Now().Unix()})
+	}
 	response.Header().Set("Content-Type", "text/plain")
 	response.WriteHeader(http.StatusCreated)
 	response.Write([]byte(fullURL))
 }
 
-func GetHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
+// GetHandler обрабатывает GET-запросы для перехода по короткой ссылке
+//
+// Параметры URL:
+//   - id: идентификатор короткой ссылки
+//
+// Возвращает:
+//   - 307 Temporary Redirect: перенаправление на исходный URL
+//   - 404 Not Found: ссылка не найдена
+//   - 410 Gone: ссылка удалена
+func GetHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage, audit *service.AuditService) {
+	userID, err := middleware.GetUserIDFromRequest(request)
+	if err != nil {
+		logger.Log.Warn("failed to get userID", zap.Error(err))
+		http.Error(response, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	id := chi.URLParam(request, "id")
 	origURL, found, deleted := storage.Get(id)
 
@@ -126,18 +176,29 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage rep
 		http.Error(response, "Gone", http.StatusGone)
 		return
 	}
+	if audit != nil {
+		audit.Notify(service.AuditEvent{Action: "follow", UserID: userID, URL: origURL, TS: time.Now().Unix()})
+	}
 
 	http.Redirect(response, request, origURL, http.StatusTemporaryRedirect)
 }
 
-func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
-	if request.Header.Get("Content-Type") != "application/json" {
-		logger.Log.Warn("invalid content type", zap.String("content_type", request.Header.Get("Content-Type")))
-		http.Error(
-			response,
-			"Invalid Content-Type",
-			http.StatusUnsupportedMediaType,
-		)
+// JSONPostHandler обрабатывает POST-запросы с JSON-телом
+//
+// Ожидает:
+//   - Content-Type: application/json
+//   - Body: {"url": "исходный URL"}
+//
+// Возвращает:
+//   - 201 Created: {"result": "короткий URL"}
+//   - 409 Conflict: {"result": "существующий URL"}
+//   - 400 Bad Request: неверный формат
+//   - 415 Unsupported Media Type: неверный Content-Type
+func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
+	contentType := request.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "application/json") {
+		logger.Log.Warn("invalid content type", zap.String("content_type", contentType))
+		http.Error(response, "Invalid Content-Type", http.StatusUnsupportedMediaType)
 		return
 	}
 
@@ -231,11 +292,23 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 		return
 	}
 
+	if audit != nil {
+		audit.Notify(service.AuditEvent{Action: "shorten", UserID: userID, URL: fullURL, TS: time.Now().Unix()})
+	}
+
 	response.Header().Set("Content-Type", "application/json")
 	response.WriteHeader(http.StatusCreated)
 	response.Write(respJSON)
 }
 
+// BatchHandler обрабатывает пакетное создание коротких ссылок
+//
+// Ожидает:
+//   - Content-Type: application/json
+//   - Body: [{"correlation_id": "id1", "original_url": "url1"}, ...]
+//
+// Возвращает:
+//   - 201 Created: [{"correlation_id": "id1", "short_url": "short1"}, ...]
 func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	var batches []models.BatchRequest
 	var buf bytes.Buffer
@@ -322,12 +395,31 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 	response.Write(respJSON)
 }
 
+// GenerateAndSaveShortURL генерирует уникальный короткий URL и сохраняет его
+//
+// Параметры:
+//   - originalURL: исходный длинный URL
+//   - storage: хранилище URL
+//   - userID: идентификатор пользователя
+//
+// Возвращает:
+//   - string: сгенерированный короткий URL
+//   - error: ошибка при генерации или сохранении
+//
+// При конфликте (уже существующий URL) возвращает существующий короткий URL
 func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, userID string) (string, error) {
+	logger.Log.Info(">>> GenerateAndSaveShortURL",
+		zap.Any("storage", storage))
+	if storage == nil {
+		return "", fmt.Errorf("storage is nil")
+	}
 	var maxAttempts = 10
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shortURL := service.GenerateShortURL(6)
+		logger.Log.Info("Generated ID", zap.String("id", shortURL))
 		savedShortURL, err := storage.Save(shortURL, originalURL, userID)
+		logger.Log.Info("storage.Save()", zap.Error(err))
 
 		if err == nil {
 			return savedShortURL, nil
@@ -345,6 +437,11 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, 
 	return "", fmt.Errorf("failed to generate unique short URL after %d attempts", maxAttempts)
 }
 
+// DBHealthCheck проверяет доступность хранилища
+//
+// Возвращает:
+//   - 200 OK: хранилище доступно
+//   - 500 Internal Server Error: хранилище недоступно
 func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
 	logger.Log.Info("HealthCheck called", zap.String("method", request.Method))
 
@@ -362,6 +459,12 @@ func DBHealthCheck(response http.ResponseWriter, request *http.Request, storage 
 	response.Write([]byte("OK"))
 }
 
+// GetUserURLSHandler возвращает все URL текущего пользователя
+//
+// Возвращает:
+//   - 200 OK: [{"short_url": "short", "original_url": "original"}, ...]
+//   - 204 No Content: у пользователя нет URL
+//   - 401 Unauthorized: пользователь не авторизован
 func GetUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	userID, err := middleware.GetUserIDFromRequest(request)
 	if err != nil {
@@ -413,6 +516,15 @@ func GetUserURLSHandler(response http.ResponseWriter, request *http.Request, bas
 	response.Write(respJSON)
 }
 
+// DeleteUserURLSHandler обрабатывает удаление нескольких URL
+//
+// Ожидает:
+//   - Body: ["short1", "short2", ...]
+//
+// Возвращает:
+//   - 202 Accepted: запрос принят в обработку
+//   - 400 Bad Request: неверный формат запроса
+//   - 401 Unauthorized: пользователь не авторизован
 func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage) {
 	userID, err := middleware.GetUserIDFromRequest(request)
 	if err != nil {

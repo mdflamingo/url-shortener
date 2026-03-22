@@ -1,3 +1,12 @@
+// Package repository содержит PostgreSQL хранилище URL с поддержкой миграций и пула соединений
+//
+// Использует pgxpool для конкурентного доступа и автоматические миграции.
+// Поддерживает soft delete (is_deleted), батч операции, fan-out/fan-in удаление.
+// Уникальность обеспечивается через UNIQUE constraint на full_url.
+//
+// Таблица urls:
+//
+//	short_url (PK), full_url (UNIQUE), user_id, is_deleted (bool)
 package repository
 
 import (
@@ -5,11 +14,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/mdflamingo/url-shortener/internal/logger"
 	"go.uber.org/zap"
+
+	"github.com/mdflamingo/url-shortener/internal/logger"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -19,58 +30,133 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-type URLPair struct {
-	ShortURL    string
-	OriginalURL string
-	UserID      string
-}
-
+// DBStorage - PostgreSQL хранилище с пулом соединений и миграциями
 type DBStorage struct {
-	pool *pgxpool.Pool
+	dsn      string        // DSN строка подключения
+	pool     *pgxpool.Pool // пул соединений (lazy init)
+	poolOnce sync.Once     // гарантия единственной инициализации пула
+	initErr  error         // ошибка инициализации
 }
 
+// NewDBStorage создает PostgreSQL хранилище
+//
+// dsn - строка подключения (postgres://user:pass@host:port/db?sslmode=disable).
+// Пул инициализируется лениво при первом запросе.
 func NewDBStorage(dsn string) (*DBStorage, error) {
-	ctx := context.Background()
-
-	config, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	config.MaxConns = 10
-	config.MinConns = 2
-	config.MaxConnLifetime = time.Hour
-	config.MaxConnIdleTime = 30 * time.Minute
-	config.HealthCheckPeriod = time.Minute
-
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create connection pool: %w", err)
-	}
-
-	ctxPing, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	if err := pool.Ping(ctxPing); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	if err := runMigrations(dsn); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("failed to run migrations: %w", err)
-	}
-
-	return &DBStorage{pool: pool}, nil
+	return &DBStorage{
+		dsn: dsn,
+	}, nil
 }
 
+// getPool возвращает инициализированный пул соединений (lazy singleton)
+//
+// Настройки пула:
+//
+//	MaxConns=10, MinConns=2, MaxConnLifetime=1h, HealthCheck=1m
+//
+// Автоматически запускает миграции в фоне.
+func (d *DBStorage) getPool(ctx context.Context) (*pgxpool.Pool, error) {
+	d.poolOnce.Do(func() {
+		config, err := pgxpool.ParseConfig(d.dsn)
+		if err != nil {
+			d.initErr = fmt.Errorf("failed to parse config: %w", err)
+			return
+		}
+
+		config.MaxConns = 10
+		config.MinConns = 2
+		config.MaxConnLifetime = time.Hour
+		config.MaxConnIdleTime = 30 * time.Minute
+		config.HealthCheckPeriod = time.Minute
+
+		config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeDescribeExec
+
+		pool, err := pgxpool.NewWithConfig(ctx, config)
+		if err != nil {
+			d.initErr = fmt.Errorf("failed to create connection pool: %w", err)
+			return
+		}
+
+		ctxPing, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		if err := pool.Ping(ctxPing); err != nil {
+			pool.Close()
+			d.initErr = fmt.Errorf("failed to ping database: %w", err)
+			return
+		}
+
+		d.pool = pool
+
+		go d.runMigrationsAsync()
+	})
+
+	if d.initErr != nil {
+		return nil, d.initErr
+	}
+	return d.pool, nil
+}
+
+// runMigrationsAsync запускает миграции БД в фоне
+//
+// Использует golang-migrate из папки migrations/.
+// Логирует результат выполнения.
+func (d *DBStorage) runMigrationsAsync() {
+	time.Sleep(1 * time.Second)
+
+	logger.Log.Info("Running database migrations in background")
+
+	db, err := sql.Open("postgres", d.dsn)
+	if err != nil {
+		logger.Log.Error("Failed to open database for migrations", zap.Error(err))
+		return
+	}
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		logger.Log.Error("Failed to ping database for migrations", zap.Error(err))
+		return
+	}
+
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	if err != nil {
+		logger.Log.Error("Failed to create migration driver", zap.Error(err))
+		return
+	}
+
+	m, err := migrate.NewWithDatabaseInstance(
+		"file://migrations",
+		"postgres",
+		driver)
+	if err != nil {
+		logger.Log.Error("Failed to create migrate instance", zap.Error(err))
+		return
+	}
+
+	err = m.Up()
+	if err != nil && err != migrate.ErrNoChange {
+		logger.Log.Error("Failed to run migrations", zap.Error(err))
+		return
+	}
+
+	logger.Log.Info("Migrations completed successfully")
+}
+
+// Save сохраняет URL с обработкой конфликтов по full_url
+//
+// Использует UPSERT (ON CONFLICT full_url). Если возвращен другой shortURL - конфликт.
 func (d *DBStorage) Save(shortURL, originalURL, userID string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	pool, err := d.getPool(ctx)
+	if err != nil {
+		return "", fmt.Errorf("database not available: %w", err)
+	}
+
 	var returnedShortURL string
 
-	err := d.pool.QueryRow(ctx,
+	err = pool.QueryRow(ctx,
 		`INSERT INTO urls (short_url, full_url, user_id)
          VALUES ($1, $2, $3)
          ON CONFLICT (full_url)
@@ -93,6 +179,9 @@ func (d *DBStorage) Save(shortURL, originalURL, userID string) (string, error) {
 	return returnedShortURL, nil
 }
 
+// SaveMany сохраняет батч URL в транзакции с обработкой конфликтов
+//
+// Использует pgx.Batch + транзакцию. При конфликте возвращает существующий shortURL.
 func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	if len(urls) == 0 {
 		return urls, nil
@@ -101,7 +190,12 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	tx, err := d.pool.Begin(ctx)
+	pool, err := d.getPool(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("database not available: %w", err)
+	}
+
+	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
@@ -159,22 +253,31 @@ func (d *DBStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	return urls, nil
 }
 
+// Get получает URL по shortURL с флагом удаления
 func (d *DBStorage) Get(shortURL string) (string, bool, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
+	pool, err := d.getPool(ctx)
+	if err != nil {
+		logger.Log.Error("Failed to get database pool", zap.Error(err))
+		return "", false, false
+	}
+
 	var originalURL string
 	var deleted bool
-	err := d.pool.QueryRow(ctx, "SELECT full_url, is_deleted FROM urls WHERE short_url = $1", shortURL).Scan(&originalURL, &deleted)
+	err = pool.QueryRow(ctx, "SELECT full_url, is_deleted FROM urls WHERE short_url = $1", shortURL).Scan(&originalURL, &deleted)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", false, false
 		}
+		logger.Log.Error("Failed to get URL", zap.Error(err))
 		return "", false, false
 	}
 	return originalURL, true, deleted
 }
 
+// Delete асинхронно удаляет батчи URL (soft delete, fan-out/fan-in)
 func (d *DBStorage) Delete(doneCh chan struct{}, inputCh chan string, userID string) chan error {
 	resultChs := d.fanOut(doneCh, inputCh, userID)
 	finalCh := d.fanIn(doneCh, resultChs...)
@@ -182,23 +285,35 @@ func (d *DBStorage) Delete(doneCh chan struct{}, inputCh chan string, userID str
 	return finalCh
 }
 
+// processBatch удаляет батч URL пользователя (is_deleted = true)
 func (d *DBStorage) processBatch(ctx context.Context, batch []string, userID string) error {
+	pool, err := d.getPool(ctx)
+	if err != nil {
+		return fmt.Errorf("database not available: %w", err)
+	}
+
 	query := `UPDATE urls SET is_deleted = true
               WHERE short_url = ANY($1) AND user_id = $2 AND is_deleted = false`
 
-	_, err := d.pool.Exec(ctx, query, batch, userID)
+	_, err = pool.Exec(ctx, query, batch, userID)
 	if err != nil {
-		fmt.Printf("Error deleting batch: %v\n", err)
+		logger.Log.Error("Error deleting batch", zap.Error(err))
 	}
 	logger.Log.Info("Deleted batch", zap.Int("count", len(batch)), zap.String("userID", userID))
 	return err
 }
 
+// GetByUserID возвращает все URL пользователя (активные)
 func (d *DBStorage) GetByUserID(userID string) ([]URLPair, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	rows, err := d.pool.Query(ctx,
+	pool, err := d.getPool(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("database not available: %w", err)
+	}
+
+	rows, err := pool.Query(ctx,
 		"SELECT short_url, full_url FROM urls WHERE user_id = $1",
 		userID)
 
@@ -222,50 +337,22 @@ func (d *DBStorage) GetByUserID(userID string) ([]URLPair, error) {
 		return nil, fmt.Errorf("rows processing error: %w", err)
 	}
 
-	if len(urls) == 0 {
-		return []URLPair{}, nil
-	}
-
 	return urls, nil
 }
 
+// Close закрывает пул соединений
 func (d *DBStorage) Close() error {
-	d.pool.Close()
+	if d.pool != nil {
+		d.pool.Close()
+	}
 	return nil
 }
 
-func runMigrations(dsn string) error {
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
-	}
-	defer db.Close()
-
-	if err := db.Ping(); err != nil {
-		return fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	driver, err := postgres.WithInstance(db, &postgres.Config{})
-	if err != nil {
-		return fmt.Errorf("failed to create migration driver: %w", err)
-	}
-
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://migrations",
-		"postgres",
-		driver)
-	if err != nil {
-		return fmt.Errorf("failed to create migrate instance: %w", err)
-	}
-
-	err = m.Up()
-	if err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("failed to run migrations: %w", err)
-	}
-
-	return nil
-}
-
+// Ping проверяет доступность БД через пул
 func (d *DBStorage) Ping(ctx context.Context) error {
-	return d.pool.Ping(ctx)
+	pool, err := d.getPool(ctx)
+	if err != nil {
+		return err
+	}
+	return pool.Ping(ctx)
 }

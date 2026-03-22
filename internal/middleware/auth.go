@@ -1,3 +1,8 @@
+// Package middleware содержит HTTP middleware для аутентификации пользователей через подписанные JWT cookie
+//
+// Реализует механизм идентификации пользователей по cookie "user_id" с JWT токеном.
+// Автоматически создает нового пользователя (UUID) при отсутствии/невалидности cookie.
+// Добавляет userID в контекст запроса для использования в обработчиках.
 package middleware
 
 import (
@@ -9,24 +14,48 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/mdflamingo/url-shortener/internal/logger"
 	"go.uber.org/zap"
+
+	"github.com/mdflamingo/url-shortener/internal/logger"
 )
 
+// contextKey - тип для ключей контекста (избегаем коллизий с другими пакетами)
 type contextKey string
 
 const userIDKey contextKey = "userID"
 
+// SignedCookieMiddleware - middleware для работы с подписанными JWT cookie пользователей
 type SignedCookieMiddleware struct {
-	secretKey []byte
+	secretKey []byte // секретный ключ для подписи JWT токенов
 }
 
+// NewSignedCookieMiddleware создает новый middleware для аутентификации по cookie
+//
+// secret - секретный ключ для подписи JWT (рекомендуется 32+ байта случайных данных).
+//
+// Пример:
+//
+//	middleware := middleware.NewSignedCookieMiddleware("my-secret-key-32-chars-long")
 func NewSignedCookieMiddleware(secret string) *SignedCookieMiddleware {
 	return &SignedCookieMiddleware{
 		secretKey: []byte(secret),
 	}
 }
 
+// CookieMiddleware - HTTP middleware для аутентификации пользователей
+//
+// 1. Читает cookie "user_id" с JWT токеном
+// 2. Валидирует JWT или создает новый UUID пользователя
+// 3. Устанавливает cookie на 30 дней (HttpOnly, SameSite=Lax)
+// 4. Добавляет userID в context запроса
+//
+// Регистрация в chi:
+//
+//	r.Use(cookieMiddleware.CookieMiddleware)
+//
+// Cookie параметры:
+//
+//	Name: "user_id", HttpOnly: true, MaxAge: 30 дней, Path: "/"
 func (m *SignedCookieMiddleware) CookieMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookieName := "user_id"
@@ -62,7 +91,7 @@ func (m *SignedCookieMiddleware) CookieMiddleware(next http.Handler) http.Handle
 				Expires:  time.Now().Add(30 * 24 * time.Hour),
 			})
 		} else {
-			logger.Log.Info("Using existing userID", zap.String("userID", userID)) // Исправлено: убрана ошибка, добавлен userID
+			logger.Log.Info("Using existing userID", zap.String("userID", userID))
 		}
 
 		ctx := context.WithValue(r.Context(), userIDKey, userID)
@@ -72,6 +101,10 @@ func (m *SignedCookieMiddleware) CookieMiddleware(next http.Handler) http.Handle
 	})
 }
 
+// createJWT создает JWT токен для указанного userID
+//
+// Токен содержит claims: userID, exp (30 дней), iat.
+// Подписывается HS256 с использованием secretKey.
 func (m *SignedCookieMiddleware) createJWT(userID string) string {
 	claims := jwt.MapClaims{
 		"userID": userID,
@@ -88,6 +121,10 @@ func (m *SignedCookieMiddleware) createJWT(userID string) string {
 	return tokenString
 }
 
+// validateJWT валидирует JWT токен и извлекает userID
+//
+// Проверяет подпись, срок действия, формат claims.
+// Возвращает userID или ошибку валидации.
 func (m *SignedCookieMiddleware) validateJWT(tokenString string) (string, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -117,6 +154,18 @@ func (m *SignedCookieMiddleware) validateJWT(tokenString string) (string, error)
 	return userID, nil
 }
 
+// GetUserIDFromRequest извлекает userID из контекста запроса
+//
+// Должен вызываться после прохождения через CookieMiddleware.
+// Возвращает userID или ошибку если не найден в контексте.
+//
+// Пример использования в handler:
+//
+//	userID, err := middleware.GetUserIDFromRequest(r)
+//	if err != nil {
+//	    http.Error(w, "Unauthorized", http.StatusUnauthorized)
+//	    return
+//	}
 func GetUserIDFromRequest(r *http.Request) (string, error) {
 	ctx := r.Context()
 	userIDValue := ctx.Value(userIDKey)

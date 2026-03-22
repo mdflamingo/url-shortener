@@ -1,0 +1,30 @@
+File: main
+Type: inuse_space
+Time: 2026-03-09 23:35:00 MSK
+Showing nodes accounting for -72.47MB, 93.84% of 77.23MB total
+      flat  flat%   sum%        cum   cum%
+  -68.96MB 89.30% 89.30%   -68.96MB 89.30%  go.uber.org/zap/buffer.(*Buffer).AppendString
+   -3.51MB  4.55% 93.84%    -3.51MB  4.55%  bufio.NewWriterSize (inline)
+         0     0% 93.84%   -68.96MB 89.30%  github.com/go-chi/chi/v5.(*Mux).ServeHTTP
+         0     0% 93.84%   -68.96MB 89.30%  github.com/go-chi/chi/v5.(*Mux).routeHTTP
+         0     0% 93.84%   -68.96MB 89.30%  github.com/mdflamingo/url-shortener/internal/handler.PostHandler
+         0     0% 93.84%   -68.96MB 89.30%  github.com/mdflamingo/url-shortener/internal/logger.RequestLogger.func2
+         0     0% 93.84%   -68.96MB 89.30%  github.com/mdflamingo/url-shortener/internal/middleware.(*SignedCookieMiddleware).CookieMiddleware-fm.(*SignedCookieMiddleware).CookieMiddleware.func1
+         0     0% 93.84%   -68.96MB 89.30%  github.com/mdflamingo/url-shortener/internal/middleware.GzipMiddleware.func1
+         0     0% 93.84%   -68.96MB 89.30%  github.com/mdflamingo/url-shortener/internal/router.NewRouter.func3
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap.(*Logger).Warn
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap/zapcore.(*CheckedEntry).Write
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap/zapcore.(*ioCore).Write
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap/zapcore.(*jsonEncoder).AddString
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap/zapcore.(*jsonEncoder).AppendString
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap/zapcore.(*jsonEncoder).EncodeEntry
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap/zapcore.(*jsonEncoder).safeAddString (inline)
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap/zapcore.Field.AddTo
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap/zapcore.addFields (inline)
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap/zapcore.encodeError
+         0     0% 93.84%   -68.96MB 89.30%  go.uber.org/zap/zapcore.safeAppendStringLike[go.shape.string]
+         0     0% 93.84%    -1.50MB  1.95%  net/http.(*conn).readRequest
+         0     0% 93.84%   -72.47MB 93.84%  net/http.(*conn).serve
+         0     0% 93.84%   -68.96MB 89.30%  net/http.HandlerFunc.ServeHTTP
+         0     0% 93.84%    -3.51MB  4.55%  net/http.newBufioWriterSize
+         0     0% 93.84%   -68.96MB 89.30%  net/http.serverHandler.ServeHTTP

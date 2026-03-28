@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 func main() {
@@ -147,4 +148,32 @@ func resetField(recv, name, tp string) string {
 	default:
 		return "nil"
 	}
+}
+
+type Resetter interface {
+	Reset()
+}
+
+// Pool - обобщенный пул для объектов с Reset()
+type Pool[T Resetter] struct {
+	pool sync.Pool
+}
+
+// New создает новый Pool
+func New[T Resetter]() *Pool[T] {
+	return &Pool[T]{}
+}
+
+// Get возвращает объект из пула (или создает новый)
+func (p *Pool[T]) Get() *T {
+	if obj := p.pool.Get(); obj != nil {
+		return obj.(*T)
+	}
+	return new(T)
+}
+
+// Put возвращает объект в пул с вызовом Reset()
+func (p *Pool[T]) Put(obj T) {
+	obj.Reset()
+	p.pool.Put(obj)
 }

@@ -27,7 +27,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-// Глобальные переменные сборки (заполняются при компиляции через ldflags)
+// Глобальные переменные сборки (заполняются при компиляции через ldflags или используются дефолтные значения)
 var (
 	buildVersion string
 	buildDate    string
@@ -187,9 +187,9 @@ func initAuditService(conf *config.Config) (*service.AuditService, error) {
 }
 
 func printBuildInfo() {
-	fmt.Printf("Build version: %s\n", getOrDefault(buildVersion, "N/A"))
-	fmt.Printf("Build date: %s\n", getOrDefault(buildDate, "N/A"))
-	fmt.Printf("Build commit: %s\n", getOrDefault(buildCommit, "N/A"))
+	fmt.Printf("Build version: %s\n", getOrDefault(buildVersion, "dev"))
+	fmt.Printf("Build date: %s\n", getOrDefault(buildDate, "unknown"))
+	fmt.Printf("Build commit: %s\n", getOrDefault(buildCommit, "none"))
 	fmt.Println("---")
 }
 

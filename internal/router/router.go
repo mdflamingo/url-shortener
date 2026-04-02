@@ -43,7 +43,7 @@ func NewRouter(conf *config.Config, storage repository.URLStorage, cookieMiddlew
 	// Подключение глобальных middleware
 	r.Use(logger.RequestLogger)
 	r.Use(cookieMiddleware.CookieMiddleware)
-	// r.Use(middleware.GzipMiddleware)
+	r.Use(middleware.GzipMiddleware)
 
 	// Эндпоинт для проверки работоспособности (health check)
 	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {

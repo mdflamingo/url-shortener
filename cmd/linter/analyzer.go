@@ -2,6 +2,7 @@ package main
 
 import (
 	"go/ast"
+	"go/types"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -17,61 +18,80 @@ var Analyzer = &analysis.Analyzer{
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	info := pass.TypesInfo
 
-	inspect.Preorder([]ast.Node{
-		(*ast.CallExpr)(nil),
-	}, func(n ast.Node) {
-		call := n.(*ast.CallExpr)
-		if isPanicCall(pass, call) {
-			pass.Reportf(call.Pos(), "avoid using panic")
-			return
-		}
-	})
+	var currentFn *ast.FuncDecl
 
 	inspect.Preorder([]ast.Node{
 		(*ast.FuncDecl)(nil),
+		(*ast.CallExpr)(nil),
 	}, func(n ast.Node) {
-		fn := n.(*ast.FuncDecl)
-		if !isMainFunction(fn) {
-			inspectFnForFatalCalls(pass, fn, inspect)
+		switch node := n.(type) {
+		case *ast.FuncDecl:
+			currentFn = node
+
+		case *ast.CallExpr:
+			checkCall(pass, node, info, currentFn)
 		}
 	})
 
 	return nil, nil
 }
 
-func isPanicCall(pass *analysis.Pass, call *ast.CallExpr) bool {
+func checkCall(pass *analysis.Pass, call *ast.CallExpr, info *types.Info, currentFn *ast.FuncDecl) {
+	if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "panic" {
+		pass.Reportf(call.Pos(), "avoid using panic")
+		return
+	}
+
 	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-		if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "log" {
-			if sel.Sel.Name == "Fatal" || sel.Sel.Name == "Fatalf" || sel.Sel.Name == "Fatalln" {
-				return true
+		pkgPath := getPackagePath(sel.X, info)
+
+		switch pkgPath {
+		case "log":
+			if isFatalLogCall(sel.Sel.Name) && !isMainFunction(currentFn) {
+				pass.Reportf(call.Pos(), "log.%s should only be used in main function", sel.Sel.Name)
+				return
+			}
+		case "os":
+			if sel.Sel.Name == "Exit" && !isMainFunction(currentFn) {
+				pass.Reportf(call.Pos(), "os.Exit should only be used in main function")
+				return
 			}
 		}
-		if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "os" && sel.Sel.Name == "Exit" {
-			return true
-		}
+	}
+}
+
+func getPackagePath(node ast.Node, info *types.Info) string {
+	ident, ok := node.(*ast.Ident)
+	if !ok {
+		return ""
 	}
 
-	if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "panic" {
+	obj, ok := info.Uses[ident]
+	if !ok {
+		return ""
+	}
+
+	pkgName, ok := obj.(*types.PkgName)
+	if !ok {
+		return ""
+	}
+
+	return pkgName.Imported().Path()
+}
+
+func isFatalLogCall(method string) bool {
+	switch method {
+	case "Fatal", "Fatalf", "Fatalln":
 		return true
 	}
-
 	return false
 }
 
 func isMainFunction(fn *ast.FuncDecl) bool {
-	return fn.Name.Name == "main" && fn.Recv == nil
-}
-
-func inspectFnForFatalCalls(pass *analysis.Pass, fn *ast.FuncDecl, inspect *inspector.Inspector) {
-	_ = []ast.Node{
-		(*ast.CallExpr)(nil),
+	if fn == nil {
+		return false
 	}
-	inspect.Preorder([]ast.Node{fn.Body}, func(n ast.Node) {
-		if call, ok := n.(*ast.CallExpr); ok {
-			if isPanicCall(pass, call) {
-				pass.Reportf(call.Pos(), "log.Fatal, log.Fatalf, log.Fatalln or os.Exit should only be used in main function")
-			}
-		}
-	})
+	return fn.Name.Name == "main" && fn.Recv == nil
 }

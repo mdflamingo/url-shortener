@@ -47,7 +47,7 @@ import (
 func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
 	contentType := request.Header.Get("Content-Type")
 	logger.Log.Info("Content-Type", zap.String("type", contentType))
-	// contentType := request.Header.Get("Content-Type")
+
 	if !strings.Contains(contentType, "text/plain") {
 		logger.Log.Warn("invalid content type",
 			zap.String("content_type", contentType))
@@ -228,12 +228,19 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 
 	if errors.Is(err, repository.ErrConflict) {
 		fullURL, joinErr := url.JoinPath(baseURL, shortURL)
+		// if joinErr != nil {
+		// 	logger.Log.Error("failed to join URL path",
+		// 		zap.String("base_url", baseURL),
+		// 		zap.String("short_url", shortURL),
+		// 		zap.Error(joinErr))
+		// 	http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		// 	return
 		if joinErr != nil {
 			logger.Log.Error("failed to join URL path",
 				zap.String("base_url", baseURL),
 				zap.String("short_url", shortURL),
 				zap.Error(joinErr))
-			http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			http.Error(response, joinErr.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -265,11 +272,17 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 
 	fullURL, err := url.JoinPath(baseURL, shortURL)
 	if err != nil {
+		// logger.Log.Error("failed to join URL path",
+		// 	zap.String("base_url", baseURL),
+		// 	zap.String("short_url", shortURL),
+		// 	zap.Error(err))
+		// http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		// return
 		logger.Log.Error("failed to join URL path",
 			zap.String("base_url", baseURL),
 			zap.String("short_url", shortURL),
 			zap.Error(err))
-		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(response, err.Error(), http.StatusInternalServerError)
 		return
 	}
 

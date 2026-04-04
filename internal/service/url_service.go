@@ -29,6 +29,24 @@ func GenerateShortURL(length int) string {
 	return string(short)
 }
 
+// GenerateSecureShortURL - генерирует случайный короткий URL заданной длины
+func GenerateSecureShortURL(length int) (string, error) {
+	// Генерируем случайные байты
+	bytes := make([]byte, length)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", err
+	}
+
+	// Кодируем в URL-безопасный base64 и обрезаем
+	short := base64.URLEncoding.EncodeToString(bytes)
+	if len(short) > length {
+		short = short[:length]
+	}
+
+	return short, nil
+}
+
 // GenerateShortURLForBatch генерирует детерминированный короткий URL на основе исходного URL
 //
 // Параметры:

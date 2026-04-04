@@ -14,7 +14,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -103,8 +102,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 					zap.Error(joinErr))
 				// http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				// return
-				errorMsg := fmt.Sprintf("Error: %v, shortURL: %s", err, shortURL)
-				http.Error(response, errorMsg, http.StatusInternalServerError)
+				http.Error(response, joinErr.Error(), http.StatusInternalServerError)
 				return
 			}
 

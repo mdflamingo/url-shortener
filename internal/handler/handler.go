@@ -194,6 +194,7 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage rep
 //   - 415 Unsupported Media Type: неверный Content-Type
 func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
 	contentType := request.Header.Get("Content-Type")
+	_ = request.Header.Get("Content-Type")
 	if !strings.Contains(contentType, "application/json") {
 		logger.Log.Warn("invalid content type", zap.String("content_type", contentType))
 		http.Error(response, "Invalid Content-Type", http.StatusUnsupportedMediaType)

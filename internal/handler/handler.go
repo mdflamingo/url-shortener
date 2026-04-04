@@ -436,7 +436,7 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, 
 	var maxAttempts = 10
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		shortURL := service.GenerateShortURL(8)
+		shortURL := service.GenerateShortURL(6)
 		logger.Log.Info("Generated ID", zap.String("id", shortURL), zap.Int("attempt", attempt))
 		savedShortURL, err := storage.Save(shortURL, originalURL, userID)
 		logger.Log.Info("storage.Save()", zap.Error(err))

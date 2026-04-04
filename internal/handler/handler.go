@@ -86,7 +86,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID)x
+	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID)
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {
 			fullURL, joinErr := url.JoinPath(baseURL, shortURL)

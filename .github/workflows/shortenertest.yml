@@ -93,6 +93,7 @@ jobs:
           github.head_ref == 'iter23' ||
           github.head_ref == 'iter24'
         run: |
+          wipedb "$DATABASE_CONN_STRING"
           shortenertest -test.v -test.run=^TestIteration1$ \
               -binary-path=cmd/shortener/shortener
 

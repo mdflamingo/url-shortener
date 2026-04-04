@@ -101,7 +101,10 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 					zap.String("base_url", baseURL),
 					zap.String("short_url", shortURL),
 					zap.Error(joinErr))
-				http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				// http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				// return
+				errorMsg := fmt.Sprintf("Error: %v, shortURL: %s", err, shortURL)
+				http.Error(response, errorMsg, http.StatusInternalServerError)
 				return
 			}
 
@@ -111,20 +114,32 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 			return
 		}
 
+		// logger.Log.Error("Failed to generate short URL",
+		// 	zap.String("original_url", originalURL),
+		// 	zap.Error(err))
+		// http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		// return
+
 		logger.Log.Error("Failed to generate short URL",
 			zap.String("original_url", originalURL),
 			zap.Error(err))
-		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(response, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	fullURL, err := url.JoinPath(baseURL, shortURL)
 	if err != nil {
+		// logger.Log.Error("failed to join URL path",
+		// 	zap.String("base_url", baseURL),
+		// 	zap.String("short_url", shortURL),
+		// 	zap.Error(err))
+		// http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		// return
 		logger.Log.Error("failed to join URL path",
 			zap.String("base_url", baseURL),
 			zap.String("short_url", shortURL),
 			zap.Error(err))
-		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(response, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -242,6 +257,7 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 				zap.Error(joinErr))
 			http.Error(response, joinErr.Error(), http.StatusInternalServerError)
 			return
+
 		}
 
 		resp := models.Response{

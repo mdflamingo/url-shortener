@@ -58,7 +58,7 @@ func ParseFlags() *Config {
 	RunAddr := flag.String("a", ":8080", "address and port to run server")
 	baseURL := flag.String("b", "http://localhost:8080", "base address before short url")
 	logLevel := flag.String("l", "INFO", "log level")
-	fileStoragePath := flag.String("f", "urls.csv", "urls file path")
+	fileStoragePath := flag.String("f", "", "urls file path")
 	dataBaseDSN := flag.String("d", "", "connect to postgres")
 	cookieSecretKey := flag.String("s", "default-secret-key", "you secret key for cookie")
 	auditFile := flag.String("audit-file", "logs.log", "file for audit logs")

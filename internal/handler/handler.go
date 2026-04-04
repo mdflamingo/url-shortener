@@ -131,8 +131,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 	if audit != nil {
 		audit.Notify(service.AuditEvent{Action: "shorten", UserID: userID, URL: fullURL, TS: time.Now().Unix()})
 	}
-	response.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	response.Header().Set("Content-Encoding", "identity")
+	response.Header().Set("Content-Type", "text/plain")
 	response.WriteHeader(http.StatusCreated)
 	response.Write([]byte(fullURL))
 }

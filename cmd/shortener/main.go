@@ -134,7 +134,7 @@ func initStorage(conf *config.Config) (repository.URLStorage, error) {
 			logger.Log.Info("Successfully initialized database storage")
 			return storage, nil
 		} else {
-			logger.Log.Warn("Failed to initialize database storage", zap.Error(err))
+			logger.Log.Fatal("Failed to initialize database storage", zap.Error(err))
 		}
 	}
 

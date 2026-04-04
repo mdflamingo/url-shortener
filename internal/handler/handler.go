@@ -45,8 +45,6 @@ import (
 //   - 400 Bad Request: неверный формат
 //   - 415 Unsupported Media Type: неверный Content-Type
 func PostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
-	logger.Log.Info(">>> PostHandler START")
-
 	contentType := request.Header.Get("Content-Type")
 	logger.Log.Info("Content-Type", zap.String("type", contentType))
 	// contentType := request.Header.Get("Content-Type")

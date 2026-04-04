@@ -87,11 +87,6 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	logger.Log.Info("BEFORE GenerateAndSaveShortURL",
-		zap.String("url", originalURL),
-		zap.String("userID", userID),
-		zap.Any("storage", storage))
-
 	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID)
 
 	logger.Log.Info("AFTER GenerateAndSaveShortURL",
@@ -136,7 +131,8 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 	if audit != nil {
 		audit.Notify(service.AuditEvent{Action: "shorten", UserID: userID, URL: fullURL, TS: time.Now().Unix()})
 	}
-	response.Header().Set("Content-Type", "text/plain")
+	response.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	response.Header().Set("Content-Encoding", "identity")
 	response.WriteHeader(http.StatusCreated)
 	response.Write([]byte(fullURL))
 }
@@ -194,7 +190,6 @@ func GetHandler(response http.ResponseWriter, request *http.Request, storage rep
 //   - 415 Unsupported Media Type: неверный Content-Type
 func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseURL string, storage repository.URLStorage, audit *service.AuditService) {
 	contentType := request.Header.Get("Content-Type")
-	_ = request.Header.Get("Content-Type")
 	if !strings.Contains(contentType, "application/json") {
 		logger.Log.Warn("invalid content type", zap.String("content_type", contentType))
 		http.Error(response, "Invalid Content-Type", http.StatusUnsupportedMediaType)

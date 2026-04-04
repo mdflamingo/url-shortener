@@ -430,27 +430,22 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 //
 // При конфликте (уже существующий URL) возвращает существующий короткий URL
 func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, userID string) (string, error) {
-	logger.Log.Info(">>> GenerateAndSaveShortURL",
-		zap.Any("storage", storage))
+	logger.Log.Info(">>> GenerateAndSaveShortURL")
 	if storage == nil {
-		return "", fmt.Errorf("storage is nil")
+		return "", errors.New("storage is nil")
 	}
-	var maxAttempts = 10
 
+	var maxAttempts = 10
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		shortURL, err := service.GenerateSecureShortURL(6)
+		shortURL, err := service.GenerateSecureShortURL(8)
 		if err != nil {
 			logger.Log.Error("Failed to generate secure short URL",
-				zap.Error(err),
-				zap.Int("attempt", attempt))
-			shortURL = service.GenerateShortURL(6)
-			logger.Log.Warn("Using fallback GenerateShortURL",
-				zap.String("shortURL", shortURL))
+				zap.Error(err), zap.Int("attempt", attempt))
+			shortURL = service.GenerateShortURL(8)
+			logger.Log.Warn("Using fallback GenerateShortURL", zap.String("shortURL", shortURL))
 		}
 
-		logger.Log.Info("Generated ID",
-			zap.String("id", shortURL),
-			zap.Int("attempt", attempt))
+		logger.Log.Info("Generated ID", zap.String("id", shortURL), zap.Int("attempt", attempt))
 		savedShortURL, err := storage.Save(shortURL, originalURL, userID)
 		logger.Log.Info("storage.Save()", zap.Error(err))
 
@@ -460,14 +455,13 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, 
 
 		if errors.Is(err, repository.ErrConflict) {
 			if savedShortURL != "" {
-				return savedShortURL, err
+				return savedShortURL, repository.ErrConflict
 			}
 			continue
 		}
-
 	}
 
-	return "", fmt.Errorf("failed to generate unique short URL after %d attempts", maxAttempts)
+	return "", errors.New("failed to generate unique short URL after 10 attempts")
 }
 
 // DBHealthCheck проверяет доступность хранилища

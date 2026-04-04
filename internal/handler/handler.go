@@ -432,17 +432,11 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, 
 	if storage == nil {
 		return "", errors.New("storage is nil")
 	}
-
+	var savedError error
 	var maxAttempts = 10
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		shortURL, err := service.GenerateSecureShortURL(8)
-		if err != nil {
-			logger.Log.Error("Failed to generate secure short URL",
-				zap.Error(err), zap.Int("attempt", attempt))
-			shortURL = service.GenerateShortURL(8)
-			logger.Log.Warn("Using fallback GenerateShortURL", zap.String("shortURL", shortURL))
-		}
 
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		shortURL := service.GenerateShortURL(8)
 		logger.Log.Info("Generated ID", zap.String("id", shortURL), zap.Int("attempt", attempt))
 		savedShortURL, err := storage.Save(shortURL, originalURL, userID)
 		logger.Log.Info("storage.Save()", zap.Error(err))
@@ -450,7 +444,7 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, 
 		if err == nil {
 			return savedShortURL, nil
 		}
-
+		savedError = err
 		if errors.Is(err, repository.ErrConflict) {
 			if savedShortURL != "" {
 				return savedShortURL, repository.ErrConflict
@@ -459,7 +453,8 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, 
 		}
 	}
 
-	return "", errors.New("failed to generate unique short URL after 10 attempts")
+	// return "", errors.New("failed to generate unique short URL after 10 attempts")
+	return "", savedError
 }
 
 // DBHealthCheck проверяет доступность хранилища

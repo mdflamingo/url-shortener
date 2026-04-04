@@ -86,12 +86,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 		return
 	}
 
-	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID)
-
-	logger.Log.Info("AFTER GenerateAndSaveShortURL",
-		zap.String("short", shortURL),
-		zap.Error(err))
-
+	shortURL, err := GenerateAndSaveShortURL(originalURL, storage, userID)x
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {
 			fullURL, joinErr := url.JoinPath(baseURL, shortURL)
@@ -100,9 +95,7 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 					zap.String("base_url", baseURL),
 					zap.String("short_url", shortURL),
 					zap.Error(joinErr))
-				// http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				// return
-				http.Error(response, joinErr.Error(), http.StatusInternalServerError)
+				http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 
@@ -112,32 +105,21 @@ func PostHandler(response http.ResponseWriter, request *http.Request, baseURL st
 			return
 		}
 
-		// logger.Log.Error("Failed to generate short URL",
-		// 	zap.String("original_url", originalURL),
-		// 	zap.Error(err))
-		// http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		// return
-
 		logger.Log.Error("Failed to generate short URL",
 			zap.String("original_url", originalURL),
 			zap.Error(err))
-		http.Error(response, err.Error(), http.StatusInternalServerError)
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
+
 	}
 
 	fullURL, err := url.JoinPath(baseURL, shortURL)
 	if err != nil {
-		// logger.Log.Error("failed to join URL path",
-		// 	zap.String("base_url", baseURL),
-		// 	zap.String("short_url", shortURL),
-		// 	zap.Error(err))
-		// http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		// return
 		logger.Log.Error("failed to join URL path",
 			zap.String("base_url", baseURL),
 			zap.String("short_url", shortURL),
 			zap.Error(err))
-		http.Error(response, err.Error(), http.StatusInternalServerError)
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
@@ -241,19 +223,12 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 
 	if errors.Is(err, repository.ErrConflict) {
 		fullURL, joinErr := url.JoinPath(baseURL, shortURL)
-		// if joinErr != nil {
-		// 	logger.Log.Error("failed to join URL path",
-		// 		zap.String("base_url", baseURL),
-		// 		zap.String("short_url", shortURL),
-		// 		zap.Error(joinErr))
-		// 	http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		// 	return
 		if joinErr != nil {
 			logger.Log.Error("failed to join URL path",
 				zap.String("base_url", baseURL),
 				zap.String("short_url", shortURL),
 				zap.Error(joinErr))
-			http.Error(response, joinErr.Error(), http.StatusInternalServerError)
+			http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 
 		}
@@ -286,17 +261,11 @@ func JSONPostHandler(response http.ResponseWriter, request *http.Request, baseUR
 
 	fullURL, err := url.JoinPath(baseURL, shortURL)
 	if err != nil {
-		// logger.Log.Error("failed to join URL path",
-		// 	zap.String("base_url", baseURL),
-		// 	zap.String("short_url", shortURL),
-		// 	zap.Error(err))
-		// http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		// return
 		logger.Log.Error("failed to join URL path",
 			zap.String("base_url", baseURL),
 			zap.String("short_url", shortURL),
 			zap.Error(err))
-		http.Error(response, err.Error(), http.StatusInternalServerError)
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
@@ -428,7 +397,6 @@ func BatchHandler(response http.ResponseWriter, request *http.Request, baseURL s
 //
 // При конфликте (уже существующий URL) возвращает существующий короткий URL
 func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, userID string) (string, error) {
-	logger.Log.Info(">>> GenerateAndSaveShortURL")
 	if storage == nil {
 		return "", errors.New("storage is nil")
 	}
@@ -438,9 +406,8 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		shortURL := service.GenerateShortURL(6)
 		logger.Log.Info("Generated ID", zap.String("id", shortURL), zap.Int("attempt", attempt))
-		savedShortURL, err := storage.Save(shortURL, originalURL, userID)
-		logger.Log.Info("storage.Save()", zap.Error(err))
 
+		savedShortURL, err := storage.Save(shortURL, originalURL, userID)
 		if err == nil {
 			return savedShortURL, nil
 		}
@@ -453,7 +420,6 @@ func GenerateAndSaveShortURL(originalURL string, storage repository.URLStorage, 
 		}
 	}
 
-	// return "", errors.New("failed to generate unique short URL after 10 attempts")
 	return "", savedError
 }
 

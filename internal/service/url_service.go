@@ -10,7 +10,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"math/rand"
-	"strings"
 )
 
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -28,29 +27,6 @@ func GenerateShortURL(length int) string {
 		short[i] = letters[rand.Intn(len(letters))]
 	}
 	return string(short)
-}
-
-// GenerateSecureShortURL - генерирует случайный короткий URL заданной длины
-func GenerateSecureShortURL(length int) (string, error) {
-	bytes := make([]byte, length*2)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", err
-	}
-
-	short := base64.URLEncoding.EncodeToString(bytes)
-	filtered := make([]byte, 0, length)
-	for i := 0; len(filtered) < length && i < len(short); i++ {
-		if strings.ContainsRune(letters, rune(short[i])) {
-			filtered = append(filtered, short[i])
-		}
-	}
-
-	for len(filtered) < length {
-		filtered = append(filtered, letters[rand.Intn(len(letters))])
-	}
-
-	return string(filtered[:length]), nil
 }
 
 // GenerateShortURLForBatch генерирует детерминированный короткий URL на основе исходного URL

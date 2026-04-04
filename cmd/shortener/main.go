@@ -71,15 +71,6 @@ func main() {
 //   - Настройку маршрутизатора
 //   - Запуск HTTP-сервера
 func run(conf *config.Config) error {
-	logger.Log.Info("=== Starting run() with config ===")
-	logger.Log.Info("Config dump",
-		zap.String("RunAddr", conf.RunAddr),
-		zap.String("BaseShortURL", conf.BaseShortURL),
-		zap.String("DataBaseDSN", conf.DataBaseDSN),
-		zap.String("FileStoragePath", conf.FileStoragePath),
-		zap.String("CookieSecretKey", "***hidden***"),
-		zap.String("LogLevel", conf.LogLevel),
-	)
 	if conf.CookieSecretKey == "" {
 		logger.Log.Fatal("CookieSecretKey is required")
 	}

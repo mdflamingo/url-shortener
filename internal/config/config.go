@@ -28,6 +28,8 @@ type Config struct {
 	AuditFile string
 	// AuditURL - URL API для отправки логов аудита (по умолчанию "http://example.com/logs")
 	AuditURL string
+	// EnabledHTTPS - включение HTTPS в веб-сервере (по умолчанию выключен	)
+	EnabledHTTPS bool
 }
 
 // ParseFlags парсит флаги командной строки и переменные окружения,
@@ -35,19 +37,20 @@ type Config struct {
 //
 // Поддерживаемые флаги:
 //
-//	-a, --address=ADDR           адрес и порт сервера
-//	-b, --base-url=URL           базовый URL для коротких ссылок
-//	-l, --log-level=LEVEL        уровень логирования
-//	-f, --file=FILENAME          путь к файлу хранилища
-//	-d, --database=DSN           строка подключения к БД
-//	-s, --secret=KEY             секретный ключ для cookie
-//	-audit-file=PATH             файл логов аудита
-//	-audit-url=URL               API для логов аудита
+//		-a                      адрес и порт сервера
+//		-b                      базовый URL для коротких ссылок
+//		-l                      уровень логирования
+//		-f                      путь к файлу хранилища
+//		-d                      строка подключения к БД
+//		-secret-key             секретный ключ для cookie
+//		-audit-file=PATH        файл логов аудита
+//		-audit-url=URL          API для логов аудита
+//	    -s                      включение HTTPS в веб-сервере (true/false)
 //
 // Поддерживаемые переменные окружения:
 //
 //	SERVER_ADDRESS, BASE_URL, LOG_LEVEL, FILE_STORAGE_PATH,
-//	DATABASE_CONN_STRING, COOKIE_SECRET_KEY, AUDIT_FILE, AUDIT_URL
+//	DATABASE_CONN_STRING, COOKIE_SECRET_KEY, AUDIT_FILE, AUDIT_URL, ENABLE_HTTPS
 //
 // Пример использования:
 //
@@ -60,9 +63,10 @@ func ParseFlags() *Config {
 	logLevel := flag.String("l", "INFO", "log level")
 	fileStoragePath := flag.String("f", "urls.csv", "urls file path")
 	dataBaseDSN := flag.String("d", "", "connect to postgres")
-	cookieSecretKey := flag.String("s", "default-secret-key", "you secret key for cookie")
+	cookieSecretKey := flag.String("secret-key", "default-secret-key", "you secret key for cookie")
 	auditFile := flag.String("audit-file", "logs.log", "file for audit logs")
 	auditURL := flag.String("audit-url", "http://example.com/logs", "API to send audit logs")
+	enabledHTTPS := flag.Bool("s", false, "enabled HTTPS")
 
 	flag.Parse()
 
@@ -74,6 +78,7 @@ func ParseFlags() *Config {
 	cfg.CookieSecretKey = getEnvOrDefault("COOKIE_SECRET_KEY", *cookieSecretKey)
 	cfg.AuditFile = getEnvOrDefault("AUDIT_FILE", *auditFile)
 	cfg.AuditURL = getEnvOrDefault("AUDIT_URL", *auditURL)
+	cfg.EnabledHTTPS = getEnvOrDefaultBool("ENABLE_HTTPS", *enabledHTTPS)
 
 	return cfg
 }
@@ -87,6 +92,13 @@ func ParseFlags() *Config {
 func getEnvOrDefault(envName, defaultValue string) string {
 	if envValue := os.Getenv(envName); envValue != "" {
 		return envValue
+	}
+	return defaultValue
+}
+
+func getEnvOrDefaultBool(envName string, defaultValue bool) bool {
+	if envValue := os.Getenv(envName); envValue != "" {
+		return strings.ToLower(envValue) == "true" || envValue == "1"
 	}
 	return defaultValue
 }

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"path/filepath"
 
 	"go.uber.org/zap"
 
@@ -96,6 +97,10 @@ func run(conf *config.Config) error {
 	cookieMiddleware := middleware.NewSignedCookieMiddleware(conf.CookieSecretKey)
 	r := router.NewRouter(conf, storage, cookieMiddleware, auditService)
 
+	if conf.EnabledHTTPS {
+		certificate, privateKey := readKeys()
+		return http.ListenAndServeTLS(":443", certificate, privateKey, r)
+	}
 	return http.ListenAndServe(conf.RunAddr, r)
 }
 
@@ -199,4 +204,31 @@ func getOrDefault(value, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// readKeys Загружает сертификат и приватный ключ из файлов ~/cert.pem и ~/private.pem
+func readKeys() (string, string) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		logger.Log.Fatal("cannot get user home directory", zap.Error(err))
+	}
+
+	certPath := filepath.Join(homeDir, "cert.pem")
+	keyPath := filepath.Join(homeDir, "private.pem")
+
+	certificateBytes, err := os.ReadFile(certPath)
+	if err != nil {
+		logger.Log.Fatal("cannot read certificate file",
+			zap.String("path", certPath),
+			zap.Error(err))
+	}
+
+	privateKeyBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		logger.Log.Fatal("cannot read private key file",
+			zap.String("path", keyPath),
+			zap.Error(err))
+	}
+
+	return string(certificateBytes), string(privateKeyBytes)
 }

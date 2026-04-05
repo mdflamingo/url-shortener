@@ -88,7 +88,10 @@ func (d *DBStorage) getPool(ctx context.Context) (*pgxpool.Pool, error) {
 
 		d.pool = pool
 
-		go d.runMigrationsAsync()
+		if err := d.runMigrationsSync(); err != nil {
+			d.initErr = fmt.Errorf("failed to run migrations: %w", err)
+			return
+		}
 	})
 
 	if d.initErr != nil {
@@ -97,31 +100,25 @@ func (d *DBStorage) getPool(ctx context.Context) (*pgxpool.Pool, error) {
 	return d.pool, nil
 }
 
-// runMigrationsAsync запускает миграции БД в фоне
-//
 // Использует golang-migrate из папки migrations/.
 // Логирует результат выполнения.
-func (d *DBStorage) runMigrationsAsync() {
-	time.Sleep(1 * time.Second)
-
-	logger.Log.Info("Running database migrations in background")
+// runMigrationsSync синхронно запускает миграции
+func (d *DBStorage) runMigrationsSync() error {
+	logger.Log.Info("Running database migrations (sync)")
 
 	db, err := sql.Open("postgres", d.dsn)
 	if err != nil {
-		logger.Log.Error("Failed to open database for migrations", zap.Error(err))
-		return
+		return fmt.Errorf("failed to open database for migrations: %w", err)
 	}
 	defer db.Close()
 
 	if err := db.Ping(); err != nil {
-		logger.Log.Error("Failed to ping database for migrations", zap.Error(err))
-		return
+		return fmt.Errorf("failed to ping database for migrations: %w", err)
 	}
 
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
-		logger.Log.Error("Failed to create migration driver", zap.Error(err))
-		return
+		return fmt.Errorf("failed to create migration driver: %w", err)
 	}
 
 	m, err := migrate.NewWithDatabaseInstance(
@@ -129,17 +126,16 @@ func (d *DBStorage) runMigrationsAsync() {
 		"postgres",
 		driver)
 	if err != nil {
-		logger.Log.Error("Failed to create migrate instance", zap.Error(err))
-		return
+		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
 
 	err = m.Up()
 	if err != nil && err != migrate.ErrNoChange {
-		logger.Log.Error("Failed to run migrations", zap.Error(err))
-		return
+		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	logger.Log.Info("Migrations completed successfully")
+	return nil
 }
 
 // Save сохраняет URL с обработкой конфликтов по full_url

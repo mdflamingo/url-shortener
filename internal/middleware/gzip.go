@@ -1,13 +1,5 @@
-// Package middleware содержит Gzip middleware для сжатия HTTP запросов и ответов
-//
-// Поддерживает:
-// - Сжатие ответов для клиентов с Accept-Encoding: gzip (статусы 2xx, кроме 204)
-// - Распаковку gzip запросов (Content-Encoding: gzip)
-// - Автоматическое добавление Content-Encoding: gzip заголовка
-//
-// Регистрация в chi:
-//
-//	r.Use(middleware.GzipMiddleware)
+// Package middleware предоставляет HTTP middleware для сжатия данных.
+// Поддерживает сжатие ответов (gzip) и распаковку запросов (gzip).
 package middleware
 
 import (
@@ -15,88 +7,70 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/mdflamingo/url-shortener/internal/logger"
-	"go.uber.org/zap"
 )
 
-// compressWriter - обертка над http.ResponseWriter для сжатия ответа gzip
-//
-// Сжимает только успешные ответы (2xx, кроме 204 NoContent).
-// Автоматически устанавливает Content-Encoding: gzip.
+// compressWriter реализует http.ResponseWriter с поддержкой gzip сжатия.
+// Прозрачно сжимает данные ответа перед отправкой клиенту.
 type compressWriter struct {
-	w             http.ResponseWriter // оригинальный ResponseWriter
-	zw            *gzip.Writer        // gzip writer
-	statusCode    int                 // HTTP статус кода
-	headerWritten bool                // флаг записи заголовков
+	w  http.ResponseWriter // оригинальный ResponseWriter
+	zw *gzip.Writer        // gzip writer для сжатия данных
 }
 
-// newCompressWriter создает новый compressWriter
+// newCompressWriter создает новый compressWriter.
+// Параметры:
+//   - w: оригинальный http.ResponseWriter
+//
+// Возвращает: инициализированный compressWriter
 func newCompressWriter(w http.ResponseWriter) *compressWriter {
 	return &compressWriter{
-		w:          w,
-		zw:         gzip.NewWriter(w),
-		statusCode: http.StatusOK,
+		w:  w,
+		zw: gzip.NewWriter(w),
 	}
 }
 
-// Header возвращает заголовки оригинального ResponseWriter
+// Header возвращает заголовки HTTP ответа.
+// Реализует интерфейс http.ResponseWriter.
 func (c *compressWriter) Header() http.Header {
 	return c.w.Header()
 }
 
-// Write записывает данные в ответ
-//
-// Для статусов 2xx (кроме 204) - сжимает через gzip.
-// Для остальных статусов - пишет без сжатия.
+// Write записывает сжатые данные в ответ.
+// Данные сжимаются с помощью gzip и отправляются клиенту.
+// Реализует интерфейс http.ResponseWriter.
 func (c *compressWriter) Write(p []byte) (int, error) {
-	if !c.headerWritten {
-		c.WriteHeader(c.statusCode)
-	}
-
-	// Сжимаем только успешные ответы (кроме 204 NoContent)
-	if c.statusCode >= 200 && c.statusCode < 300 && c.statusCode != http.StatusNoContent {
-		return c.zw.Write(p)
-	}
-	return c.w.Write(p)
+	return c.zw.Write(p)
 }
 
-// WriteHeader устанавливает HTTP статус и Content-Encoding: gzip
-//
-// Устанавливает заголовок только для сжимаемых статусов (2xx, кроме 204).
-// Игнорирует повторные вызовы WriteHeader.
+// WriteHeader отправляет HTTP статус код.
+// Добавляет заголовок "Content-Encoding: gzip" только для успешных ответов (статус < 300).
+// Реализует интерфейс http.ResponseWriter.
 func (c *compressWriter) WriteHeader(statusCode int) {
-	if c.headerWritten {
-		return
-	}
-
-	c.statusCode = statusCode
-	c.headerWritten = true
-
-	// ИСПРАВЛЕНО: убрана лишняя проверка statusCode = 409 и исправлен синтаксис
-	// Content-Encoding только для сжимаемых ответов
-	if statusCode >= 200 && statusCode < 300 && statusCode != http.StatusNoContent {
+	if statusCode < 300 {
 		c.w.Header().Set("Content-Encoding", "gzip")
 	}
-
 	c.w.WriteHeader(statusCode)
 }
 
-// Close закрывает gzip writer и освобождает ресурсы
+// Close закрывает gzip writer и освобождает ресурсы.
+// Должен вызываться после завершения записи ответа.
 func (c *compressWriter) Close() error {
-	if c.zw != nil {
-		return c.zw.Close()
-	}
-	return nil
+	return c.zw.Close()
 }
 
-// compressReader - обертка над io.ReadCloser для распаковки gzip запросов
+// compressReader реализует io.ReadCloser для чтения сжатых gzip данных.
+// Прозрачно распаковывает данные при чтении.
 type compressReader struct {
-	r  io.ReadCloser // оригинальный body
-	zr *gzip.Reader  // gzip reader
+	r  io.ReadCloser // оригинальный ReadCloser
+	zr *gzip.Reader  // gzip reader для распаковки
 }
 
-// newCompressReader создает новый compressReader для распаковки запроса
+// newCompressReader создает новый compressReader.
+// Параметры:
+//   - r: оригинальный io.ReadCloser (обычно r.Body)
+//
+// Возвращает:
+//   - *compressReader: инициализированный compressReader
+//   - error: ошибка при создании gzip.Reader
 func newCompressReader(r io.ReadCloser) (*compressReader, error) {
 	zr, err := gzip.NewReader(r)
 	if err != nil {
@@ -109,12 +83,14 @@ func newCompressReader(r io.ReadCloser) (*compressReader, error) {
 	}, nil
 }
 
-// Read читает распакованные данные из gzip
-func (c *compressReader) Read(p []byte) (n int, err error) {
+// Read читает распакованные данные.
+// Реализует интерфейс io.Reader.
+func (c compressReader) Read(p []byte) (n int, err error) {
 	return c.zr.Read(p)
 }
 
-// Close закрывает gzip reader и оригинальный body
+// Close закрывает оригинальный ReadCloser и gzip reader.
+// Реализует интерфейс io.Closer.
 func (c *compressReader) Close() error {
 	if err := c.r.Close(); err != nil {
 		return err
@@ -122,58 +98,52 @@ func (c *compressReader) Close() error {
 	return c.zr.Close()
 }
 
-// GzipMiddleware - middleware для автоматического gzip сжатия запросов/ответов
+// GzipMiddleware предоставляет middleware для сжатия HTTP ответов и распаковки запросов.
 //
-// Логика:
-// 1. Если Content-Encoding: gzip - распаковывает r.Body
-// 2. Если Accept-Encoding: gzip - сжимает w.Write() (только 2xx, кроме 204)
-// 3. Иначе - пропускает без изменений
+// Функциональность:
+//   - Сжатие ответов: если клиент поддерживает gzip (заголовок Accept-Encoding),
+//     ответ будет сжат перед отправкой
+//   - Распаковка запросов: если тело запроса сжато (заголовок Content-Encoding: gzip),
+//     оно будет автоматически распаковано
 //
-// Поддерживаемые заголовки:
-// - Request: Content-Encoding: gzip, Accept-Encoding: gzip
-// - Response: Content-Encoding: gzip (автоматически)
+// Использование:
 //
-// Регистрация:
+//	router := http.NewServeMux()
+//	router.HandleFunc("/api/data", dataHandler)
 //
-//	r.Use(middleware.GzipMiddleware)
+//	// Применяем middleware
+//	handler := middleware.GzipMiddleware(router)
+//	http.ListenAndServe(":8080", handler)
 //
-// GzipMiddleware - middleware для автоматического gzip сжатия запросов/ответов
+// Параметры:
+//   - next: следующий обработчик в цепочке middleware
+//
+// Возвращает: http.Handler с поддержкой gzip сжатия/распаковки
 func GzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Log.Debug("GzipMiddleware",
-			zap.String("accept_encoding", r.Header.Get("Accept-Encoding")),
-			zap.String("content_encoding", r.Header.Get("Content-Encoding")),
-			zap.String("path", r.URL.Path),
-		)
-		// 1. Распаковка сжатого запроса
-		if strings.Contains(r.Header.Get("Content-Encoding"), "gzip") {
+		ow := w
+		// Проверяем поддержку gzip клиентом
+		acceptEncoding := r.Header.Get("Accept-Encoding")
+		supportsGzip := strings.Contains(acceptEncoding, "gzip")
+		if supportsGzip {
+			cw := newCompressWriter(w)
+			ow = cw
+			defer cw.Close()
+		}
+
+		// Проверяем, сжато ли тело запроса
+		contentEncoding := r.Header.Get("Content-Encoding")
+		sendsGzip := strings.Contains(contentEncoding, "gzip")
+		if sendsGzip {
 			cr, err := newCompressReader(r.Body)
 			if err != nil {
-				http.Error(w, "Failed to decompress request", http.StatusBadRequest)
+				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			defer cr.Close()
 			r.Body = cr
-
-			contentType := r.Header.Get("Content-Type")
-			if strings.Contains(contentType, "application/x-gzip") ||
-				strings.Contains(contentType, "gzip") {
-				r.Header.Set("Content-Type", "text/plain; charset=utf-8")
-			}
-
-			// Удаляем заголовок Content-Encoding
-			r.Header.Del("Content-Encoding")
+			defer cr.Close()
 		}
 
-		// 2. Сжатие ответа для клиента
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			cw := newCompressWriter(w)
-			defer cw.Close()
-			next.ServeHTTP(cw, r)
-			return
-		}
-
-		// 3. Обычный запрос без сжатия
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(ow, r)
 	})
 }

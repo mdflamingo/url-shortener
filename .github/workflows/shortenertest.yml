@@ -18,7 +18,7 @@ jobs:
 
   shortenertest:
     runs-on: ubuntu-latest
-    container: golang:1.24
+    container: golang:1.26
     needs: branchtest
 
     env:
@@ -309,6 +309,7 @@ jobs:
           github.head_ref == 'iter24'
         run: |
           TEMP_FILE=$(random tempfile)
+          unset DATABASE_CONN_STRING
           shortenertest -test.v -test.run=^TestIteration9$ \
               -binary-path=cmd/shortener/shortener \
               -source-path=. \

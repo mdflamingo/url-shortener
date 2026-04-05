@@ -27,7 +27,16 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
+// Глобальные переменные сборки (заполняются при компиляции через ldflags или используются дефолтные значения)
+var (
+	buildVersion string
+	buildDate    string
+	buildCommit  string
+)
+
 func main() {
+	printBuildInfo()
+
 	if os.Getenv("ENABLE_PPROF") == "true" {
 		go func() {
 			pprofServer := &http.Server{
@@ -116,7 +125,7 @@ func initStorage(conf *config.Config) (repository.URLStorage, error) {
 			logger.Log.Info("Successfully initialized database storage")
 			return storage, nil
 		} else {
-			logger.Log.Warn("Failed to initialize database storage", zap.Error(err))
+			logger.Log.Fatal("Failed to initialize database storage", zap.Error(err))
 		}
 	}
 
@@ -174,6 +183,20 @@ func initAuditService(conf *config.Config) (*service.AuditService, error) {
 	} else {
 		logger.Log.Info("Audit HTTP disabled (no URL provided)")
 	}
-
 	return auditService, nil
+}
+
+func printBuildInfo() {
+	fmt.Printf("Build version: %s\n", getOrDefault(buildVersion, "dev"))
+	fmt.Printf("Build date: %s\n", getOrDefault(buildDate, "unknown"))
+	fmt.Printf("Build commit: %s\n", getOrDefault(buildCommit, "none"))
+	fmt.Println("---")
+}
+
+// getOrDefault возвращает значение или значение по умолчанию
+func getOrDefault(value, defaultValue string) string {
+	if value != "" {
+		return value
+	}
+	return defaultValue
 }

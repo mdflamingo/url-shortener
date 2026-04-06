@@ -5,6 +5,7 @@
 package config
 
 import (
+	"encoding/json"
 	"flag"
 	"os"
 	"strings"
@@ -28,6 +29,20 @@ type Config struct {
 	AuditFile string
 	// AuditURL - URL API для отправки логов аудита (по умолчанию "http://example.com/logs")
 	AuditURL string
+	// EnabledHTTPS - включение HTTPS в веб-сервере (по умолчанию выключен	)
+	EnabledHTTPS bool
+}
+
+// FileConfig содержит все настройки приложения URL Shortener из json файла
+type FileConfig struct {
+	// ServerAdress - адрес и порт для запуска HTTP сервера (по умолчанию ":8080")
+	ServerAdress string
+	// BaseURL - базовый URL для формирования коротких ссылок (по умолчанию "http://localhost:8080")
+	BaseURL string
+	// FileStoragePath - путь к файлу для хранения URL (по умолчанию "urls.csv")
+	FileStoragePath string
+	// DataBaseDSN - строка подключения к PostgreSQL базе данных
+	DataBaseDSN string
 	// EnabledHTTPS - включение HTTPS в веб-сервере (по умолчанию выключен	)
 	EnabledHTTPS bool
 }
@@ -67,38 +82,73 @@ func ParseFlags() *Config {
 	auditFile := flag.String("audit-file", "logs.log", "file for audit logs")
 	auditURL := flag.String("audit-url", "http://example.com/logs", "API to send audit logs")
 	enabledHTTPS := flag.Bool("s", false, "enabled HTTPS")
+	configFile := flag.String("c", "config.json", "config from json file")
 
 	flag.Parse()
 
-	cfg.RunAddr = getEnvOrDefault("SERVER_ADDRESS", *RunAddr)
-	cfg.BaseShortURL = getEnvOrDefault("BASE_URL", *baseURL)
-	cfg.LogLevel = strings.ToUpper(getEnvOrDefault("LOG_LEVEL", *logLevel))
-	cfg.FileStoragePath = getEnvOrDefault("FILE_STORAGE_PATH", *fileStoragePath)
-	cfg.DataBaseDSN = getEnvOrDefault("DATABASE_CONN_STRING", *dataBaseDSN)
-	cfg.CookieSecretKey = getEnvOrDefault("COOKIE_SECRET_KEY", *cookieSecretKey)
-	cfg.AuditFile = getEnvOrDefault("AUDIT_FILE", *auditFile)
-	cfg.AuditURL = getEnvOrDefault("AUDIT_URL", *auditURL)
-	cfg.EnabledHTTPS = getEnvOrDefaultBool("ENABLE_HTTPS", *enabledHTTPS)
+	fileConfig := loadConfigFile(*configFile)
+
+	cfg.RunAddr = getValue(*RunAddr, "SERVER_ADDRESS", fileConfig.ServerAdress, ":8080")
+	cfg.BaseShortURL = getValue(*baseURL, "BASE_URL", fileConfig.BaseURL, "http://localhost:8080")
+	cfg.LogLevel = strings.ToUpper(getValue(*logLevel, "LOG_LEVEL", "", "INFO"))
+	cfg.FileStoragePath = getValue(*fileStoragePath, "FILE_STORAGE_PATH", fileConfig.FileStoragePath, "urls.csv")
+	cfg.DataBaseDSN = getValue(*dataBaseDSN, "DATABASE_CONN_STRING", fileConfig.DataBaseDSN, "")
+	cfg.CookieSecretKey = getValue(*cookieSecretKey, "COOKIE_SECRET_KEY", "", "default-secret-key")
+	cfg.AuditFile = getValue(*auditFile, "AUDIT_FILE", "", "logs.log")
+	cfg.AuditURL = getValue(*auditURL, "AUDIT_URL", "", "http://example.com/logs")
+	cfg.EnabledHTTPS = getBoolValue(*enabledHTTPS, "ENABLE_HTTPS", fileConfig.EnabledHTTPS, false)
 
 	return cfg
+
 }
 
-// getEnvOrDefault возвращает значение переменной окружения или значение по умолчанию
-//
-// Если переменная окружения задана и не пустая, возвращает её значение.
-// В противном случае возвращает defaultValue.
-//
-// Используется для приоритизации: переменные окружения > флаги > значения по умолчанию.
-func getEnvOrDefault(envName, defaultValue string) string {
+// getValue возвращает значение переменной окружения, значение по умолчанию или занчение из файла
+// Используется для приоритизации: переменные окружения > флаги > файл > значения по умолчанию.
+func getValue(flagValue, envName, fileValue, defaultValue string) string {
 	if envValue := os.Getenv(envName); envValue != "" {
 		return envValue
 	}
+	if flagValue != "" && flagValue != defaultValue {
+		return flagValue
+	}
+	if fileValue != "" {
+		return fileValue
+	}
+
 	return defaultValue
 }
 
-func getEnvOrDefaultBool(envName string, defaultValue bool) bool {
+// getBoolValue возвращает значение переменной окружения, значение по умолчанию или занчение из файла для типов bool
+// Используется для приоритизации: переменные окружения > флаги > файл > значения по умолчанию.
+func getBoolValue(flagValue bool, envName string, fileValue bool, defaultValue bool) bool {
+	if flagValue != defaultValue {
+		return flagValue
+	}
+
 	if envValue := os.Getenv(envName); envValue != "" {
 		return strings.ToLower(envValue) == "true" || envValue == "1"
 	}
+
+	if fileValue != defaultValue {
+		return fileValue
+	}
+
 	return defaultValue
+}
+
+// loadConfigFile возвращает значения из файла конфигурации
+func loadConfigFile(path string) *FileConfig {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return &FileConfig{}
+	}
+
+	var fileConfig FileConfig
+
+	err = json.Unmarshal(data, &fileConfig)
+	if err != nil {
+		return &FileConfig{}
+	}
+
+	return &fileConfig
 }

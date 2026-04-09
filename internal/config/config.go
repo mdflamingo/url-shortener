@@ -36,15 +36,15 @@ type Config struct {
 // FileConfig содержит все настройки приложения URL Shortener из json файла
 type FileConfig struct {
 	// ServerAdress - адрес и порт для запуска HTTP сервера (по умолчанию ":8080")
-	ServerAdress string
+	ServerAdress string `json:"server_address"`
 	// BaseURL - базовый URL для формирования коротких ссылок (по умолчанию "http://localhost:8080")
-	BaseURL string
+	BaseURL string `json:"base_url"`
 	// FileStoragePath - путь к файлу для хранения URL (по умолчанию "urls.csv")
-	FileStoragePath string
+	FileStoragePath string `json:"file_storage_path"`
 	// DataBaseDSN - строка подключения к PostgreSQL базе данных
-	DataBaseDSN string
-	// EnabledHTTPS - включение HTTPS в веб-сервере (по умолчанию выключен	)
-	EnabledHTTPS bool
+	DataBaseDSN string `json:"database_dsn"`
+	// EnabledHTTPS - включение HTTPS в веб-сервере (по умолчанию выключен)
+	EnabledHTTPS bool `json:"enable_https"`
 }
 
 // ParseFlags парсит флаги командной строки и переменные окружения,
@@ -138,13 +138,17 @@ func getBoolValue(flagValue bool, envName string, fileValue bool, defaultValue b
 
 // loadConfigFile возвращает значения из файла конфигурации
 func loadConfigFile(path string) *FileConfig {
-	data, err := os.ReadFile(path)
+	configPath := path
+	if envPath := os.Getenv("CONFIG"); envPath != "" {
+		configPath = envPath
+	}
+
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return &FileConfig{}
 	}
 
 	var fileConfig FileConfig
-
 	err = json.Unmarshal(data, &fileConfig)
 	if err != nil {
 		return &FileConfig{}

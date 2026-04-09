@@ -39,12 +39,6 @@ var (
 	buildCommit  string
 )
 
-// Глобальные переменные для graceful shutdown
-var (
-	mainServer *http.Server
-	storage    repository.URLStorage
-)
-
 func main() {
 	printBuildInfo()
 
@@ -63,17 +57,13 @@ func main() {
 
 	conf := config.ParseFlags()
 
-	idleConnsClosed := GracefulShutdown(mainServer, storage)
-
 	if err := run(conf); err != nil {
 		log.Fatal(err)
 	}
-
-	<-idleConnsClosed
 	logger.Log.Info("Server shutdown gracefully")
 }
 
-// run инициализирует и запускает HTTP/HTTPS-сервер (HTTP ИЛИ HTTPS)
+// run инициализирует и запускает HTTP/HTTPS-сервер (HTTP ИЛИ HTTPS) с graceful shutdown
 func run(conf *config.Config) error {
 	if conf.CookieSecretKey == "" {
 		logger.Log.Fatal("CookieSecretKey is required")
@@ -93,7 +83,7 @@ func run(conf *config.Config) error {
 		zap.String("base_url", conf.BaseShortURL))
 
 	var errStorage error
-	storage, errStorage = initStorage(conf)
+	storage, errStorage := initStorage(conf)
 	if errStorage != nil {
 		logger.Log.Fatal("Failed to create storage", zap.Error(errStorage))
 	}
@@ -101,37 +91,35 @@ func run(conf *config.Config) error {
 	cookieMiddleware := middleware.NewSignedCookieMiddleware(conf.CookieSecretKey)
 	r := router.NewRouter(conf, storage, cookieMiddleware, auditService)
 
-	if conf.EnabledHTTPS {
-		// Только HTTPS на порту :443
-		certificate, privateKey := readKeys()
-		mainServer = &http.Server{
-			Addr:         ":443",
-			Handler:      r,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-			IdleTimeout:  120 * time.Second,
-		}
+	// Cервер с базовыми настройками таймаутов
+	server := &http.Server{
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
 
-		logger.Log.Info("Starting HTTPS server", zap.String("addr", mainServer.Addr))
-		if err := mainServer.ListenAndServeTLS(certificate, privateKey); err != http.ErrServerClosed {
+	idleConnsClosed := GracefulShutdown(server, storage)
+
+	if conf.EnabledHTTPS {
+		certificate, privateKey := readKeys()
+		server.Addr = ":443"
+		server.Handler = r
+
+		logger.Log.Info("Starting HTTPS server", zap.String("addr", server.Addr))
+		if err := server.ListenAndServeTLS(certificate, privateKey); err != http.ErrServerClosed {
 			return fmt.Errorf("HTTPS server ListenAndServeTLS: %w", err)
 		}
 	} else {
-		// Только HTTP на conf.RunAddr (:8080)
-		mainServer = &http.Server{
-			Addr:         conf.RunAddr,
-			Handler:      r,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-			IdleTimeout:  120 * time.Second,
-		}
+		server.Addr = conf.RunAddr
+		server.Handler = r
 
-		logger.Log.Info("Starting HTTP server", zap.String("addr", mainServer.Addr))
-		if err := mainServer.ListenAndServe(); err != http.ErrServerClosed {
+		logger.Log.Info("Starting HTTP server", zap.String("addr", server.Addr))
+		if err := server.ListenAndServe(); err != http.ErrServerClosed {
 			return fmt.Errorf("HTTP server ListenAndServe: %w", err)
 		}
 	}
 
+	<-idleConnsClosed
 	return nil
 }
 

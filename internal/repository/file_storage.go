@@ -137,6 +137,25 @@ func (fs *FileStorage) GetByUserID(userID string) ([]URLPair, error) {
 	return result, nil
 }
 
+// GetStats возвращает количество сокращенных url и количество пользователей в сервисе
+func (fs *FileStorage) GetStats() (URLStats, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+
+	urlMap := fs.loadURLMap()
+
+	uniqueUsers := make(map[string]struct{})
+	for _, url := range urlMap {
+		uniqueUsers[url.UserID] = struct{}{}
+	}
+
+	stats := URLStats{
+		Urls:  len(urlMap),
+		Users: len(uniqueUsers),
+	}
+	return stats, nil
+}
+
 // Delete асинхронно помечает URL как удаленные (soft delete)
 //
 // Принимает каналы для graceful shutdown и обработки ошибок.

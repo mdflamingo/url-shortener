@@ -19,6 +19,14 @@ type URLPair struct {
 	UserID      string // уникальный ID пользователя (UUID из middleware)
 }
 
+// URLStats представляет количество сокращенных url и количество пользователей в сервисе
+//
+// Используется во внешнем API и для передачи данных между слоями.
+type URLStats struct {
+	Urls  int // количество сокращённых URL в сервисе
+	Users int // количество пользователей в сервисе
+}
+
 // ErrConflict возвращается при конфликте данных (существующий full_url или short_url)
 var ErrConflict = errors.New("data conflict")
 
@@ -59,6 +67,9 @@ type URLStorage interface {
 
 	// GetByUserID возвращает все активные URL пользователя (is_deleted=false)
 	GetByUserID(userID string) ([]URLPair, error)
+
+	// GetStats возвращает количество сокращенных url и количество пользователей в сервисе
+	GetStats() (URLStats, error)
 
 	// Delete асинхронно помечает батч URL как удаленные (soft delete)
 	//

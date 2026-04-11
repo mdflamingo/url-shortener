@@ -80,5 +80,10 @@ func NewRouter(conf *config.Config, storage repository.URLStorage, cookieMiddlew
 		handler.DeleteUserURLSHandler(w, req, conf.BaseShortURL, storage)
 	})
 
+	// Эндпоинт для получения количество сокращённых URL в сервисе и количество пользователей в сервисе
+	r.Get("/api/internal/stats", func(w http.ResponseWriter, req *http.Request) {
+		handler.GetStatsHandler(w, req, storage)
+	})
+
 	return r
 }

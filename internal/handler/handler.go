@@ -576,3 +576,38 @@ func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, 
 	response.Header().Set("Content-Type", "application/json")
 	response.WriteHeader(http.StatusAccepted)
 }
+
+// GetStatsHandler возвращает количество сокращённых URL в сервисе и количество пользователей в сервисе
+//
+// Возвращает:
+//   - 200 OK: {"urls": "3", "users": "3"}
+//   - 401 Unauthorized: пользователь не авторизован
+//   - 403 403 Forbidden IP-адрес клиента входит в доверенную подсеть
+func GetStatsHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
+	_, err := middleware.GetUserIDFromRequest(request)
+	if err != nil {
+		logger.Log.Warn("failed to get userID", zap.Error(err))
+		http.Error(response, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	stats, err := storage.GetStats()
+	if err != nil {
+		logger.Log.Error("Failed to get stats from storage", zap.Error(err))
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	responseStats := models.ResponseStats{Urls: stats.Urls, Users: stats.Users}
+
+	respJSON, err := json.Marshal(responseStats)
+	if err != nil {
+		logger.Log.Error("Failed to marshal response to JSON", zap.Error(err))
+		http.Error(response, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(http.StatusOK)
+	response.Write(respJSON)
+}

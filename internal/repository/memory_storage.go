@@ -134,6 +134,16 @@ func (s *MemoryStorage) Get(shortURL string) (string, bool, bool) {
 	return origURL, true, false // deleted всегда false для in-memory
 }
 
+// GetStats возвращает количество сокращенных url и количество пользователей в сервисе
+func (s *MemoryStorage) GetStats() (URLStats, error) {
+	stats := URLStats{
+		Urls:  len(s.data),
+		Users: len(s.data),
+	}
+
+	return stats, nil
+}
+
 // Close не делает ничего
 func (s *MemoryStorage) Close() error {
 	return nil

@@ -9,11 +9,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -49,31 +54,21 @@ func main() {
 			}
 		}()
 	}
+
 	conf := config.ParseFlags()
+
 	if err := run(conf); err != nil {
 		log.Fatal(err)
 	}
+	logger.Log.Info("Server shutdown gracefully")
 }
 
-// run инициализирует и запускает HTTP-сервер
-//
-// Параметры:
-//   - conf: конфигурация приложения
-//
-// Возвращает:
-//   - error: ошибка при запуске сервера
-//
-// Функция выполняет:
-//   - Проверку обязательных параметров
-//   - Инициализацию логгера
-//   - Настройку сервиса аудита
-//   - Инициализацию хранилища
-//   - Настройку маршрутизатора
-//   - Запуск HTTP-сервера
+// run инициализирует и запускает HTTP/HTTPS-сервер (HTTP ИЛИ HTTPS) с graceful shutdown
 func run(conf *config.Config) error {
 	if conf.CookieSecretKey == "" {
 		logger.Log.Fatal("CookieSecretKey is required")
 	}
+
 	if err := logger.InitLogger(conf.LogLevel); err != nil {
 		return err
 	}
@@ -87,32 +82,47 @@ func run(conf *config.Config) error {
 		zap.String("address", conf.RunAddr),
 		zap.String("base_url", conf.BaseShortURL))
 
-	storage, err := initStorage(conf)
-	if err != nil {
-		logger.Log.Fatal("Failed to create storage", zap.Error(err))
+	var errStorage error
+	storage, errStorage := initStorage(conf)
+	if errStorage != nil {
+		logger.Log.Fatal("Failed to create storage", zap.Error(errStorage))
 	}
-	defer storage.Close()
 
 	cookieMiddleware := middleware.NewSignedCookieMiddleware(conf.CookieSecretKey)
 	r := router.NewRouter(conf, storage, cookieMiddleware, auditService)
 
-	return http.ListenAndServe(conf.RunAddr, r)
+	// Cервер с базовыми настройками таймаутов
+	server := &http.Server{
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	idleConnsClosed := GracefulShutdown(server, storage)
+
+	if conf.EnabledHTTPS {
+		certificate, privateKey := readKeys()
+		server.Addr = ":443"
+		server.Handler = r
+
+		logger.Log.Info("Starting HTTPS server", zap.String("addr", server.Addr))
+		if err := server.ListenAndServeTLS(certificate, privateKey); err != http.ErrServerClosed {
+			return fmt.Errorf("HTTPS server ListenAndServeTLS: %w", err)
+		}
+	} else {
+		server.Addr = conf.RunAddr
+		server.Handler = r
+
+		logger.Log.Info("Starting HTTP server", zap.String("addr", server.Addr))
+		if err := server.ListenAndServe(); err != http.ErrServerClosed {
+			return fmt.Errorf("HTTP server ListenAndServe: %w", err)
+		}
+	}
+
+	<-idleConnsClosed
+	return nil
 }
 
-// initStorage инициализирует хранилище URL в зависимости от конфигурации
-//
-// Параметры:
-//   - conf: конфигурация приложения
-//
-// Возвращает:
-//   - repository.URLStorage: инициализированное хранилище
-//   - error: ошибка при инициализации
-//
-// Приоритет выбора хранилища:
-//  1. PostgreSQL (если указан DataBaseDSN)
-//  2. Файловое хранилище (если указан FileStoragePath)
-//  3. In-memory хранилище (по умолчанию)
-//
 // initStorage инициализирует хранилище URL в зависимости от конфигурации
 func initStorage(conf *config.Config) (repository.URLStorage, error) {
 	logger.Log.Info("Initializing storage",
@@ -199,4 +209,69 @@ func getOrDefault(value, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// readKeys Загружает сертификат и приватный ключ из файлов ~/cert.pem и ~/private.pem
+func readKeys() (string, string) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		logger.Log.Fatal("cannot get user home directory", zap.Error(err))
+	}
+
+	certPath := filepath.Join(homeDir, "cert.pem")
+	keyPath := filepath.Join(homeDir, "private.pem")
+
+	certificateBytes, err := os.ReadFile(certPath)
+	if err != nil {
+		logger.Log.Fatal("cannot read certificate file",
+			zap.String("path", certPath),
+			zap.Error(err))
+	}
+
+	privateKeyBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		logger.Log.Fatal("cannot read private key file",
+			zap.String("path", keyPath),
+			zap.Error(err))
+	}
+
+	return string(certificateBytes), string(privateKeyBytes)
+}
+
+// GracefulShutdown настраивает обработку сигналов и возвращает канал для ожидания
+func GracefulShutdown(server *http.Server, storage repository.URLStorage) <-chan struct{} {
+	idleConnsClosed := make(chan struct{})
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+
+	go func() {
+		<-sigCh
+		logger.Log.Info("Received shutdown signal, starting graceful shutdown...")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		// Graceful shutdown сервера
+		if server != nil {
+			if err := server.Shutdown(ctx); err != nil {
+				logger.Log.Error("HTTP server shutdown error", zap.Error(err))
+			} else {
+				logger.Log.Info("HTTP server shutdown gracefully")
+			}
+		}
+
+		// Сохранение данных
+		if storage != nil {
+			if err := storage.Close(); err != nil {
+				logger.Log.Error("Storage close error", zap.Error(err))
+			} else {
+				logger.Log.Info("Storage closed successfully - all data saved")
+			}
+		}
+
+		logger.Log.Info("All resources closed")
+		close(idleConnsClosed)
+	}()
+
+	return idleConnsClosed
 }

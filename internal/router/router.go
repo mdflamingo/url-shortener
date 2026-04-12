@@ -82,7 +82,7 @@ func NewRouter(conf *config.Config, storage repository.URLStorage, cookieMiddlew
 
 	// Эндпоинт для получения количество сокращённых URL в сервисе и количество пользователей в сервисе
 	r.Get("/api/internal/stats", func(w http.ResponseWriter, req *http.Request) {
-		handler.GetStatsHandler(w, req, storage)
+		handler.GetStatsHandler(w, req, storage, conf.TrustedSubnet)
 	})
 
 	return r

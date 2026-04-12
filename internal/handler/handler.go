@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -582,12 +583,26 @@ func DeleteUserURLSHandler(response http.ResponseWriter, request *http.Request, 
 // Возвращает:
 //   - 200 OK: {"urls": "3", "users": "3"}
 //   - 401 Unauthorized: пользователь не авторизован
-//   - 403 403 Forbidden IP-адрес клиента входит в доверенную подсеть
-func GetStatsHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage) {
-	_, err := middleware.GetUserIDFromRequest(request)
-	if err != nil {
-		logger.Log.Warn("failed to get userID", zap.Error(err))
-		http.Error(response, "Unauthorized", http.StatusUnauthorized)
+//   - 403 Forbidden IP-адрес клиента входит в доверенную подсеть
+func GetStatsHandler(response http.ResponseWriter, request *http.Request, storage repository.URLStorage, trustedSubnet string) {
+	if trustedSubnet == "" {
+		logger.Log.Warn("trusted subnet is empty, access forbidden")
+		http.Error(response, "Forbidden: trusted subnet not configured", http.StatusForbidden)
+		return
+	}
+
+	clientIP := request.Header.Get("X-Real-IP")
+	if clientIP == "" {
+		logger.Log.Warn("X-Real-IP header is missing")
+		http.Error(response, "Forbidden: X-Real-IP header is required", http.StatusForbidden)
+		return
+	}
+
+	if !isIPInTrustedSubnet(clientIP, trustedSubnet) {
+		logger.Log.Warn("IP not in trusted subnet",
+			zap.String("client_ip", clientIP),
+			zap.String("trusted_subnet", trustedSubnet))
+		http.Error(response, "Forbidden: IP not in trusted subnet", http.StatusForbidden)
 		return
 	}
 
@@ -610,4 +625,23 @@ func GetStatsHandler(response http.ResponseWriter, request *http.Request, storag
 	response.Header().Set("Content-Type", "application/json")
 	response.WriteHeader(http.StatusOK)
 	response.Write(respJSON)
+}
+
+// isIPInTrustedSubnet проверяет, принадлежит ли IP указанной подсети CIDR
+func isIPInTrustedSubnet(ipStr, cidrStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		logger.Log.Warn("Invalid IP address format", zap.String("ip", ipStr))
+		return false
+	}
+
+	_, cidrNet, err := net.ParseCIDR(cidrStr)
+	if err != nil {
+		logger.Log.Error("Invalid trusted subnet CIDR",
+			zap.String("trusted_subnet", cidrStr),
+			zap.Error(err))
+		return false
+	}
+
+	return cidrNet.Contains(ip)
 }

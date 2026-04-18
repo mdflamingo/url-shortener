@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
 	"github.com/mdflamingo/url-shortener/internal/handler"
 	"github.com/mdflamingo/url-shortener/internal/middleware"
@@ -31,18 +32,19 @@ func setupRouter(t *testing.T, baseURL string, storage *repository.FileStorage) 
 	cookieMiddleware := middleware.NewSignedCookieMiddleware(cookieSecret)
 
 	auditService := service.NewAuditService()
+	urlService := service.NewURLService(storage, baseURL, auditService, zap.NewNop())
 
 	r.Use(middleware.GzipMiddleware)
 	r.Use(cookieMiddleware.CookieMiddleware)
 
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
-		handler.GetHandler(w, req, storage, auditService)
+		handler.GetHandler(w, req, urlService)
 	})
 	r.Post("/", func(w http.ResponseWriter, req *http.Request) {
-		handler.PostHandler(w, req, baseURL, storage, auditService)
+		handler.PostHandler(w, req, urlService)
 	})
 	r.Post("/api/shorten", func(w http.ResponseWriter, req *http.Request) {
-		handler.JSONPostHandler(w, req, baseURL, storage, auditService)
+		handler.JSONPostHandler(w, req, urlService)
 	})
 	return r
 }

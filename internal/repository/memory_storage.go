@@ -3,8 +3,6 @@ package repository
 
 import (
 	"context"
-
-	"github.com/mdflamingo/url-shortener/internal/service"
 )
 
 // MemoryStorage - in-memory хранилище URL
@@ -45,7 +43,7 @@ func (s *MemoryStorage) Save(shortURL, origURL, userID string) (string, error) {
 	return shortURL, nil
 }
 
-// SaveMany сохраняет несколько URL с регенерацией при конфликтах
+// SaveMany сохраняет несколько URL (shortURL должен быть уже сгенерирован)
 func (s *MemoryStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	savedPairs := make([]URLPair, 0, len(urls))
 
@@ -61,22 +59,18 @@ func (s *MemoryStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 			continue
 		}
 
-		// Генерируем уникальный короткий URL
-		shortURL := url.ShortURL
-		for {
-			if _, exists := s.data[shortURL]; !exists {
-				break
-			}
-			// Если короткий URL занят, генерируем новый
-			shortURL = service.GenerateShortURLForBatch(url.OriginalURL)
+		// Проверяем, не занят ли короткий URL
+		if _, exists := s.data[url.ShortURL]; exists {
+			// Если занят, возвращаем ошибку (сервис должен сгенерировать новый)
+			return nil, ErrConflict
 		}
 
 		// Сохраняем
-		s.data[shortURL] = url.OriginalURL
-		s.index[url.OriginalURL] = shortURL
+		s.data[url.ShortURL] = url.OriginalURL
+		s.index[url.OriginalURL] = url.ShortURL
 
 		savedPairs = append(savedPairs, URLPair{
-			ShortURL:    shortURL,
+			ShortURL:    url.ShortURL,
 			OriginalURL: url.OriginalURL,
 			UserID:      url.UserID,
 		})
@@ -85,7 +79,7 @@ func (s *MemoryStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
 	return savedPairs, nil
 }
 
-// GetByUserID возвращает пустой список (заглушка)
+// GetByUserID возвращает все URL пользователя
 func (s *MemoryStorage) GetByUserID(userID string) ([]URLPair, error) {
 	// Для in-memory хранилища возвращаем все URL (в реальном приложении нужно фильтровать)
 	pairs := make([]URLPair, 0, len(s.data))

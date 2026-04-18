@@ -6,6 +6,8 @@ import (
 
 	"github.com/mdflamingo/url-shortener/internal/handler"
 	"github.com/mdflamingo/url-shortener/internal/repository"
+	"github.com/mdflamingo/url-shortener/internal/service"
+	"go.uber.org/zap"
 )
 
 func ExamplePostHandler() {
@@ -15,9 +17,11 @@ func ExamplePostHandler() {
 
 	w := httptest.NewRecorder()
 	storage := repository.NewMemoryStorage()
+	auditService := service.NewAuditService()
+	urlService := service.NewURLService(storage, "http://localhost:8080", auditService, zap.NewNop())
 
 	// Вызываем обработчик
-	handler.PostHandler(w, req, "http://localhost:8080", storage, nil)
+	handler.PostHandler(w, req, urlService)
 
 	// Результат: статус 201 и короткий URL в теле ответа
 }

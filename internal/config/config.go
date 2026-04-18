@@ -33,6 +33,8 @@ type Config struct {
 	EnabledHTTPS bool
 	// TrustedSubnet строковое представление бесклассовой адресации (CIDR)
 	TrustedSubnet string
+	// GRPCAddr - порт для запуска grpc сервера
+	GRPCAddr string
 }
 
 // FileConfig содержит все настройки приложения URL Shortener из json файла
@@ -65,7 +67,7 @@ type FileConfig struct {
 //			-audit-file=PATH        файл логов аудита
 //			-audit-url=URL          API для логов аудита
 //		    -s                      включение HTTPS в веб-сервере (true/false)
-//	     -t                      строковое представление бесклассовой адресации (CIDR)
+//	        -t                      строковое представление бесклассовой адресации (CIDR)
 //
 // Поддерживаемые переменные окружения:
 //
@@ -89,6 +91,7 @@ func ParseFlags() *Config {
 	enabledHTTPS := flag.Bool("s", false, "enabled HTTPS")
 	configFile := flag.String("c", "config.json", "config from json file")
 	trustedSubnet := flag.String("t", "", "")
+	grpcAddr := flag.String("g", ":3200", "port to run grpc server")
 
 	flag.Parse()
 
@@ -104,6 +107,7 @@ func ParseFlags() *Config {
 	cfg.AuditURL = getValue(*auditURL, "AUDIT_URL", "", "http://example.com/logs")
 	cfg.EnabledHTTPS = getBoolValue(*enabledHTTPS, "ENABLE_HTTPS", fileConfig.EnabledHTTPS, false)
 	cfg.TrustedSubnet = getValue(*trustedSubnet, "TRUSTED_SUBNET", fileConfig.TrustedSubnet, "")
+	cfg.GRPCAddr = getValue(*grpcAddr, "GRPC_ADDRESS", "", ":3200")
 
 	return cfg
 

@@ -13,13 +13,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"sync"
-
-	"github.com/mdflamingo/url-shortener/internal/service"
 )
 
 // FileStorage - файловое хранилище URL с поддержкой конкурентного доступа
@@ -98,22 +95,44 @@ func (fs *FileStorage) Save(shortURL, originalURL, userID string) (string, error
 	return url.ShortURL, nil
 }
 
-// SaveMany сохраняет несколько URL с автоматической генерацией при конфликтах
+// SaveMany сохраняет несколько URL (shortURL должен быть уже сгенерирован)
 func (fs *FileStorage) SaveMany(urls []URLPair) ([]URLPair, error) {
-	for i, url := range urls {
-		for {
-			_, err := fs.Save(url.ShortURL, url.OriginalURL, url.UserID)
-			if err != nil {
-				if errors.Is(err, ErrConflict) {
-					urls[i].ShortURL = service.GenerateShortURLForBatch(url.OriginalURL)
-					continue
-				}
-				return nil, err
-			}
-			break
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	savedPairs := make([]URLPair, 0, len(urls))
+
+	for _, url := range urls {
+		// Проверяем существование shortURL
+		exists, err := fs.checkExists(url.ShortURL)
+		if err != nil {
+			return nil, err
 		}
+		if exists {
+			// Если короткий URL занят, возвращаем ошибку
+			return nil, ErrConflict
+		}
+
+		// Сохраняем URL
+		urlData := &URL{
+			ShortURL:    url.ShortURL,
+			OriginalURL: url.OriginalURL,
+			UserID:      url.UserID,
+			IsDeleted:   false,
+		}
+
+		if err := fs.producer.WriteURL(urlData); err != nil {
+			return nil, fmt.Errorf("failed to write URL to file: %w", err)
+		}
+
+		savedPairs = append(savedPairs, URLPair{
+			ShortURL:    url.ShortURL,
+			OriginalURL: url.OriginalURL,
+			UserID:      url.UserID,
+		})
 	}
-	return urls, nil
+
+	return savedPairs, nil
 }
 
 // GetByUserID возвращает все активные URL пользователя

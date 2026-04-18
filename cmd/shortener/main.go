@@ -10,8 +10,10 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -21,8 +23,12 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
+	"github.com/mdflamingo/url-shortener/api/url_shortener"
 	"github.com/mdflamingo/url-shortener/internal/config"
+	shortenerGRPC "github.com/mdflamingo/url-shortener/internal/grpc"
+	"github.com/mdflamingo/url-shortener/internal/interceptor"
 	"github.com/mdflamingo/url-shortener/internal/logger"
 	"github.com/mdflamingo/url-shortener/internal/middleware"
 	"github.com/mdflamingo/url-shortener/internal/repository"
@@ -63,7 +69,7 @@ func main() {
 	logger.Log.Info("Server shutdown gracefully")
 }
 
-// run инициализирует и запускает HTTP/HTTPS-сервер (HTTP ИЛИ HTTPS) с graceful shutdown
+// run инициализирует и запускает HTTP/HTTPS-сервер и gRPC-сервер с graceful shutdown
 func run(conf *config.Config) error {
 	if conf.CookieSecretKey == "" {
 		logger.Log.Fatal("CookieSecretKey is required")
@@ -73,14 +79,11 @@ func run(conf *config.Config) error {
 		return err
 	}
 
+	// Инициализация зависимостей
 	auditService, err := initAuditService(conf)
 	if err != nil {
 		return fmt.Errorf("failed to initialize audit service: %w", err)
 	}
-
-	logger.Log.Info("Configuration loaded",
-		zap.String("address", conf.RunAddr),
-		zap.String("base_url", conf.BaseShortURL))
 
 	var errStorage error
 	storage, errStorage := initStorage(conf)
@@ -88,39 +91,39 @@ func run(conf *config.Config) error {
 		logger.Log.Fatal("Failed to create storage", zap.Error(errStorage))
 	}
 
+	urlService := service.NewURLService(storage, conf.BaseShortURL, auditService, logger.Log)
 	cookieMiddleware := middleware.NewSignedCookieMiddleware(conf.CookieSecretKey)
-	r := router.NewRouter(conf, storage, cookieMiddleware, auditService)
+	r := router.NewRouter(conf, urlService, cookieMiddleware)
 
-	// Cервер с базовыми настройками таймаутов
-	server := &http.Server{
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
+	// Создается ServerGroup
+	serverGroup := NewServerGroup(logger.Log, storage)
+
+	// Контекст с таймаутом для shutdown
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Запуск серверов
+	if err := serverGroup.StartHTTP(conf, r); err != nil {
+		return fmt.Errorf("failed to start HTTP server: %w", err)
 	}
 
-	idleConnsClosed := GracefulShutdown(server, storage)
-
-	if conf.EnabledHTTPS {
-		certificate, privateKey := readKeys()
-		server.Addr = ":443"
-		server.Handler = r
-
-		logger.Log.Info("Starting HTTPS server", zap.String("addr", server.Addr))
-		if err := server.ListenAndServeTLS(certificate, privateKey); err != http.ErrServerClosed {
-			return fmt.Errorf("HTTPS server ListenAndServeTLS: %w", err)
-		}
-	} else {
-		server.Addr = conf.RunAddr
-		server.Handler = r
-
-		logger.Log.Info("Starting HTTP server", zap.String("addr", server.Addr))
-		if err := server.ListenAndServe(); err != http.ErrServerClosed {
-			return fmt.Errorf("HTTP server ListenAndServe: %w", err)
-		}
+	if err := serverGroup.StartGRPC(shutdownCtx, conf, urlService); err != nil {
+		return fmt.Errorf("failed to start gRPC server: %w", err)
 	}
 
-	<-idleConnsClosed
-	return nil
+	// Ожидание сигнала завершения
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+
+	select {
+	case sig := <-sigCh:
+		logger.Log.Info("Received shutdown signal", zap.String("signal", fmt.Sprintf("%+v", sig)))
+	case <-shutdownCtx.Done():
+		logger.Log.Warn("Shutdown timeout reached")
+	}
+
+	// Graceful shutdown
+	return serverGroup.Shutdown(shutdownCtx)
 }
 
 // initStorage инициализирует хранилище URL в зависимости от конфигурации
@@ -238,40 +241,130 @@ func readKeys() (string, string) {
 	return string(certificateBytes), string(privateKeyBytes)
 }
 
-// GracefulShutdown настраивает обработку сигналов и возвращает канал для ожидания
-func GracefulShutdown(server *http.Server, storage repository.URLStorage) <-chan struct{} {
-	idleConnsClosed := make(chan struct{})
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+// ServerGroup управляет группой серверов с graceful shutdown
+type ServerGroup struct {
+	httpServer   *http.Server
+	grpcServer   *grpc.Server
+	grpcListener net.Listener
+	logger       *zap.Logger
+	storage      repository.URLStorage
+}
+
+// NewServerGroup создает группу серверов
+func NewServerGroup(logger *zap.Logger, storage repository.URLStorage) *ServerGroup {
+	return &ServerGroup{
+		logger:  logger,
+		storage: storage,
+	}
+}
+
+// StartHTTP запускает HTTP/HTTPS сервер
+func (sg *ServerGroup) StartHTTP(conf *config.Config, r http.Handler) error {
+	sg.httpServer = &http.Server{
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	if conf.EnabledHTTPS {
+		certificate, privateKey := readKeys()
+		sg.httpServer.Addr = ":443"
+		sg.httpServer.TLSConfig = &tls.Config{}
+		sg.logger.Info("Starting HTTPS server", zap.String("addr", sg.httpServer.Addr))
+		go sg.httpServer.ListenAndServeTLS(certificate, privateKey)
+	} else {
+		sg.httpServer.Addr = conf.RunAddr
+		sg.httpServer.Handler = r
+		sg.logger.Info("Starting HTTP server", zap.String("addr", sg.httpServer.Addr))
+		go sg.httpServer.ListenAndServe()
+	}
+
+	return nil
+}
+
+// StartGRPC запускает gRPC сервер
+func (sg *ServerGroup) StartGRPC(ctx context.Context, conf *config.Config, urlService *service.URLService) error {
+	if conf.GRPCAddr == "" {
+		return nil
+	}
+
+	lis, err := net.Listen("tcp", conf.GRPCAddr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", conf.GRPCAddr, err)
+	}
+
+	sg.grpcListener = lis
+	authInterceptor := interceptor.NewAuthInterceptor(conf.CookieSecretKey)
+
+	unaryInterceptor := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		return authInterceptor.UnaryInterceptor(ctx, req, info, handler)
+	}
+
+	sg.grpcServer = grpc.NewServer(
+		grpc.UnaryInterceptor(unaryInterceptor),
+	)
+
+	url_shortener.RegisterShortenerServiceServer(sg.grpcServer, shortenerGRPC.NewShortenerServer(urlService, sg.logger))
+
+	sg.logger.Info("Starting gRPC server", zap.String("addr", conf.GRPCAddr))
 
 	go func() {
-		<-sigCh
-		logger.Log.Info("Received shutdown signal, starting graceful shutdown...")
-
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-
-		// Graceful shutdown сервера
-		if server != nil {
-			if err := server.Shutdown(ctx); err != nil {
-				logger.Log.Error("HTTP server shutdown error", zap.Error(err))
-			} else {
-				logger.Log.Info("HTTP server shutdown gracefully")
-			}
+		if err := sg.grpcServer.Serve(lis); err != nil {
+			sg.logger.Error("gRPC server Serve error", zap.Error(err))
 		}
-
-		// Сохранение данных
-		if storage != nil {
-			if err := storage.Close(); err != nil {
-				logger.Log.Error("Storage close error", zap.Error(err))
-			} else {
-				logger.Log.Info("Storage closed successfully - all data saved")
-			}
-		}
-
-		logger.Log.Info("All resources closed")
-		close(idleConnsClosed)
 	}()
 
-	return idleConnsClosed
+	return nil
+}
+
+// Shutdown выполняет graceful shutdown всех серверов
+func (sg *ServerGroup) Shutdown(ctx context.Context) error {
+	sg.logger.Info("Starting graceful shutdown of all servers...")
+
+	var errs []error
+
+	if sg.grpcServer != nil {
+		done := make(chan struct{})
+		go func() {
+			sg.grpcServer.GracefulStop()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			sg.logger.Info("gRPC server stopped gracefully")
+		case <-ctx.Done():
+			sg.grpcServer.Stop()
+			sg.logger.Warn("gRPC server force stopped")
+		}
+	}
+
+	if sg.grpcListener != nil {
+		sg.grpcListener.Close()
+	}
+
+	if sg.httpServer != nil {
+		if err := sg.httpServer.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("HTTP server shutdown: %w", err))
+			sg.logger.Error("HTTP server shutdown error", zap.Error(err))
+		} else {
+			sg.logger.Info("HTTP server shutdown gracefully")
+		}
+	}
+
+	if sg.storage != nil {
+		if err := sg.storage.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("storage close: %w", err))
+			sg.logger.Error("Storage close error", zap.Error(err))
+		} else {
+			sg.logger.Info("Storage closed successfully")
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("shutdown errors: %v", errs)
+	}
+
+	sg.logger.Info("All servers stopped gracefully")
+	return nil
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/mdflamingo/url-shortener/internal/config"
 	"github.com/mdflamingo/url-shortener/internal/handler"
 	"github.com/mdflamingo/url-shortener/internal/logger"
-	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/mdflamingo/url-shortener/internal/service"
 
 	"github.com/mdflamingo/url-shortener/internal/middleware"
@@ -37,7 +36,7 @@ import (
 //  1. RequestLogger - логирование всех входящих запросов
 //  2. GzipMiddleware - поддержка сжатия gzip для запросов и ответов
 //  3. CookieMiddleware - аутентификация пользователей через подписанные cookie
-func NewRouter(conf *config.Config, storage repository.URLStorage, cookieMiddleware *middleware.SignedCookieMiddleware, auditService *service.AuditService) *chi.Mux {
+func NewRouter(conf *config.Config, urlService *service.URLService, cookieMiddleware *middleware.SignedCookieMiddleware) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Подключение глобальных middleware
@@ -47,42 +46,42 @@ func NewRouter(conf *config.Config, storage repository.URLStorage, cookieMiddlew
 
 	// Эндпоинт для проверки работоспособности (health check)
 	r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
-		handler.DBHealthCheck(w, r, storage)
+		handler.DBHealthCheck(w, r, urlService)
 	})
 
 	// Эндпоинт для перехода по короткой ссылке
 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
-		handler.GetHandler(w, req, storage, auditService)
+		handler.GetHandler(w, req, urlService)
 	})
 
 	// Эндпоинт для создания короткой ссылки из текстового URL
 	r.Post("/", func(w http.ResponseWriter, req *http.Request) {
-		handler.PostHandler(w, req, conf.BaseShortURL, storage, auditService)
+		handler.PostHandler(w, req, urlService)
 	})
 
 	// Эндпоинт для создания короткой ссылки из JSON
 	r.Post("/api/shorten", func(w http.ResponseWriter, req *http.Request) {
-		handler.JSONPostHandler(w, req, conf.BaseShortURL, storage, auditService)
+		handler.JSONPostHandler(w, req, urlService)
 	})
 
 	// Эндпоинт для пакетного создания коротких ссылок
 	r.Post("/api/shorten/batch", func(w http.ResponseWriter, req *http.Request) {
-		handler.BatchHandler(w, req, conf.BaseShortURL, storage)
+		handler.BatchHandler(w, req, urlService)
 	})
 
 	// Эндпоинт для получения всех URL текущего пользователя
 	r.Get("/api/user/urls", func(w http.ResponseWriter, req *http.Request) {
-		handler.GetUserURLSHandler(w, req, conf.BaseShortURL, storage)
+		handler.GetUserURLSHandler(w, req, urlService)
 	})
 
 	// Эндпоинт для удаления нескольких URL текущего пользователя
 	r.Delete("/api/user/urls", func(w http.ResponseWriter, req *http.Request) {
-		handler.DeleteUserURLSHandler(w, req, conf.BaseShortURL, storage)
+		handler.DeleteUserURLSHandler(w, req, urlService)
 	})
 
 	// Эндпоинт для получения количество сокращённых URL в сервисе и количество пользователей в сервисе
 	r.Get("/api/internal/stats", func(w http.ResponseWriter, req *http.Request) {
-		handler.GetStatsHandler(w, req, storage, conf.TrustedSubnet)
+		handler.GetStatsHandler(w, req, urlService, conf.TrustedSubnet)
 	})
 
 	return r

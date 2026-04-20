@@ -22,7 +22,7 @@ import (
 // contextKey - тип для ключей контекста (избегаем коллизий с другими пакетами)
 type contextKey string
 
-const userIDKey contextKey = "userID"
+const UserIDKey contextKey = "userID"
 
 // SignedCookieMiddleware - middleware для работы с подписанными JWT cookie пользователей
 type SignedCookieMiddleware struct {
@@ -94,7 +94,7 @@ func (m *SignedCookieMiddleware) CookieMiddleware(next http.Handler) http.Handle
 			logger.Log.Info("Using existing userID", zap.String("userID", userID))
 		}
 
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
+		ctx := context.WithValue(r.Context(), UserIDKey, userID)
 		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
@@ -168,7 +168,7 @@ func (m *SignedCookieMiddleware) validateJWT(tokenString string) (string, error)
 //	}
 func GetUserIDFromRequest(r *http.Request) (string, error) {
 	ctx := r.Context()
-	userIDValue := ctx.Value(userIDKey)
+	userIDValue := ctx.Value(UserIDKey)
 	if userIDValue == nil {
 		return "", errors.New("userID not found in context")
 	}

@@ -57,3 +57,10 @@ type ResponseByUser struct {
 	OriginalURL string `json:"original_url"` // Исходный длинный URL
 	ShortURL    string `json:"short_url"`    // Полный сокращенный URL
 }
+
+// ResponseStats представляет элемент ответа при запросе на количество url и пользователей в сервисе
+// Используется в эндпоинте GET /api/internal/stats
+type ResponseStats struct {
+	Urls  int `json:"urls"`  // количество сокращенных url
+	Users int `json:"users"` // количество пользователей в системе
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/mdflamingo/url-shortener/internal/repository"
 	"github.com/mdflamingo/url-shortener/internal/router"
 	"github.com/mdflamingo/url-shortener/internal/service"
+	"go.uber.org/zap"
 )
 
 // Example_cookieMiddleware демонстрирует работу с cookie-аутентификацией
@@ -64,11 +65,14 @@ func ExampleNewRouter() {
 	// Создаем сервис аудита
 	auditService := service.NewAuditService()
 
+	// Создаем URL сервис
+	urlService := service.NewURLService(storage, conf.BaseShortURL, auditService, zap.NewNop())
+
 	// Создаем cookie middleware
 	cookieMiddleware := middleware.NewSignedCookieMiddleware(conf.CookieSecretKey)
 
 	// Создаем маршрутизатор
-	r := router.NewRouter(conf, storage, cookieMiddleware, auditService)
+	r := router.NewRouter(conf, urlService, cookieMiddleware)
 
 	// 2. СОЗДАНИЕ ТЕСТОВОГО СЕРВЕРА
 	server := httptest.NewServer(r)
@@ -166,7 +170,8 @@ func Example_postHandler() {
 	storage := repository.NewMemoryStorage()
 	cookieMiddleware := middleware.NewSignedCookieMiddleware("test-secret")
 	auditService := service.NewAuditService()
-	r := router.NewRouter(conf, storage, cookieMiddleware, auditService)
+	urlService := service.NewURLService(storage, conf.BaseShortURL, auditService, zap.NewNop())
+	r := router.NewRouter(conf, urlService, cookieMiddleware)
 
 	server := httptest.NewServer(r)
 	defer server.Close()
@@ -188,11 +193,12 @@ func Example_getHandler() {
 	storage := repository.NewMemoryStorage()
 	cookieMiddleware := middleware.NewSignedCookieMiddleware("test-secret")
 	auditService := service.NewAuditService()
+	urlService := service.NewURLService(storage, conf.BaseShortURL, auditService, zap.NewNop())
 
 	// Предварительно сохраняем URL
 	storage.Save("abc123", "https://example.com", "user123")
 
-	r := router.NewRouter(conf, storage, cookieMiddleware, auditService)
+	r := router.NewRouter(conf, urlService, cookieMiddleware)
 	server := httptest.NewServer(r)
 	defer server.Close()
 

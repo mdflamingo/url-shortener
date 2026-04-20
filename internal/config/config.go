@@ -31,6 +31,10 @@ type Config struct {
 	AuditURL string
 	// EnabledHTTPS - включение HTTPS в веб-сервере (по умолчанию выключен	)
 	EnabledHTTPS bool
+	// TrustedSubnet строковое представление бесклассовой адресации (CIDR)
+	TrustedSubnet string
+	// GRPCAddr - порт для запуска grpc сервера
+	GRPCAddr string
 }
 
 // FileConfig содержит все настройки приложения URL Shortener из json файла
@@ -45,6 +49,8 @@ type FileConfig struct {
 	DataBaseDSN string `json:"database_dsn"`
 	// EnabledHTTPS - включение HTTPS в веб-сервере (по умолчанию выключен)
 	EnabledHTTPS bool `json:"enable_https"`
+	// TrustedSubnet строковое представление бесклассовой адресации (CIDR)
+	TrustedSubnet string `json:"trusted_subnet"`
 }
 
 // ParseFlags парсит флаги командной строки и переменные окружения,
@@ -52,20 +58,21 @@ type FileConfig struct {
 //
 // Поддерживаемые флаги:
 //
-//		-a                      адрес и порт сервера
-//		-b                      базовый URL для коротких ссылок
-//		-l                      уровень логирования
-//		-f                      путь к файлу хранилища
-//		-d                      строка подключения к БД
-//		-secret-key             секретный ключ для cookie
-//		-audit-file=PATH        файл логов аудита
-//		-audit-url=URL          API для логов аудита
-//	    -s                      включение HTTPS в веб-сервере (true/false)
+//			-a                      адрес и порт сервера
+//			-b                      базовый URL для коротких ссылок
+//			-l                      уровень логирования
+//			-f                      путь к файлу хранилища
+//			-d                      строка подключения к БД
+//			-secret-key             секретный ключ для cookie
+//			-audit-file=PATH        файл логов аудита
+//			-audit-url=URL          API для логов аудита
+//		    -s                      включение HTTPS в веб-сервере (true/false)
+//	        -t                      строковое представление бесклассовой адресации (CIDR)
 //
 // Поддерживаемые переменные окружения:
 //
 //	SERVER_ADDRESS, BASE_URL, LOG_LEVEL, FILE_STORAGE_PATH,
-//	DATABASE_CONN_STRING, COOKIE_SECRET_KEY, AUDIT_FILE, AUDIT_URL, ENABLE_HTTPS
+//	DATABASE_CONN_STRING, COOKIE_SECRET_KEY, AUDIT_FILE, AUDIT_URL, ENABLE_HTTPS, TRUSTED_SUBNET
 //
 // Пример использования:
 //
@@ -83,6 +90,8 @@ func ParseFlags() *Config {
 	auditURL := flag.String("audit-url", "http://example.com/logs", "API to send audit logs")
 	enabledHTTPS := flag.Bool("s", false, "enabled HTTPS")
 	configFile := flag.String("c", "config.json", "config from json file")
+	trustedSubnet := flag.String("t", "", "")
+	grpcAddr := flag.String("g", ":3200", "port to run grpc server")
 
 	flag.Parse()
 
@@ -97,6 +106,8 @@ func ParseFlags() *Config {
 	cfg.AuditFile = getValue(*auditFile, "AUDIT_FILE", "", "logs.log")
 	cfg.AuditURL = getValue(*auditURL, "AUDIT_URL", "", "http://example.com/logs")
 	cfg.EnabledHTTPS = getBoolValue(*enabledHTTPS, "ENABLE_HTTPS", fileConfig.EnabledHTTPS, false)
+	cfg.TrustedSubnet = getValue(*trustedSubnet, "TRUSTED_SUBNET", fileConfig.TrustedSubnet, "")
+	cfg.GRPCAddr = getValue(*grpcAddr, "GRPC_ADDRESS", "", ":3200")
 
 	return cfg
 

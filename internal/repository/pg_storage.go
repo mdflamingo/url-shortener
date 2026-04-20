@@ -336,6 +336,26 @@ func (d *DBStorage) GetByUserID(userID string) ([]URLPair, error) {
 	return urls, nil
 }
 
+// GetStats возвращает количество сокращенных url и количество пользователей в сервисе
+func (d *DBStorage) GetStats() (URLStats, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	pool, err := d.getPool(ctx)
+	if err != nil {
+		logger.Log.Error("Failed to get database pool", zap.Error(err))
+		return URLStats{}, err
+	}
+
+	var Stats URLStats
+
+	err = pool.QueryRow(ctx, "SELECT count(short_url) as urls, count(distinct(user_id)) as users FROM urls;").Scan(&Stats.Urls, &Stats.Users)
+	if err != nil {
+		return URLStats{}, err
+	}
+	return Stats, nil
+}
+
 // Close закрывает пул соединений
 func (d *DBStorage) Close() error {
 	if d.pool != nil {
